@@ -26,7 +26,24 @@ export default function ProductsSettingsPage() {
   const { theme } = useTheme();
   const [products, setProducts] = useState<ProductSettings[]>([]);
   const [loading, setLoading] = useState(true);
+  async function fetchData() {
+    try {
+      const [settingsResponse] = await Promise.all([
+        fetch('/api/product-settings')
+      ]);
 
+      if (settingsResponse.ok) {
+        const [settingsData] = await Promise.all([
+          settingsResponse.json()
+        ]);
+        setProducts(settingsData);
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
   useEffect(() => {
     // Load saved settings or initialize with defaults
     const loadSettings = async () => {
@@ -51,7 +68,8 @@ export default function ProductsSettingsPage() {
       }
     };
 
-    loadSettings();
+    // loadSettings();
+    fetchData()
   }, []);
 
   if (!user || user.role !== 'admin') {
@@ -71,26 +89,42 @@ export default function ProductsSettingsPage() {
   }
   const handleToggleProduct = async (productId: number) => {
     try {
-      const updatedProducts = products.map(product => 
-        product.id === productId 
+      const thisProducts: any = products.filter(product => product.id === productId);
+      let body = {
+        name: thisProducts[0].name,
+        isActive: !thisProducts[0].isActive
+      }
+      const updatedProducts = products.map(product =>
+        product.id === productId
           ? { ...product, isActive: !product.isActive }
           : product
       );
-      
+
+      fetch('/api/product-settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      }).then(response => response.json()).then(data => {
+
+      }).finally(() => {
+        fetchData()
+        toast.success('Product status updated successfully');
+      });
       // Save to localStorage
-      localStorage.setItem('goldProductSettings', JSON.stringify(updatedProducts));
-      setProducts(updatedProducts);
-      
+      // localStorage.setItem('goldProductSettings', JSON.stringify(updatedProducts));
+      // setProducts(updatedProducts);
+
       // Force reload prices
-      window.location.reload();
-      
-      toast.success('Product status updated successfully');
+      // window.location.reload();
+
     } catch (error) {
       console.error('Error updating product status:', error);
       toast.error('Failed to update product status');
     }
   };
-  
+
 
   if (loading) {
     return (
@@ -118,11 +152,10 @@ export default function ProductsSettingsPage() {
             {products.map((product) => (
               <div
                 key={product.id}
-                className={`flex items-center justify-between p-4 border rounded-lg ${
-                  theme === 'dark' 
-                    ? 'bg-[#1a1a1a] border-[#2A2A2A] hover:bg-[#202020]' 
-                    : 'hover:bg-gray-50'
-                }`}
+                className={`flex items-center justify-between p-4 border rounded-lg ${theme === 'dark'
+                  ? 'bg-[#1a1a1a] border-[#2A2A2A] hover:bg-[#202020]'
+                  : 'hover:bg-gray-50'
+                  }`}
               >
                 <div>
                   <h3 className={`font-medium ${theme === 'dark' ? 'text-white' : ''}`}>
