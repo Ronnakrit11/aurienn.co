@@ -8,13 +8,12 @@ import { sendDepositNotification } from '@/lib/telegram/bot';
 const API_URL = 'https://developer.easyslip.com/api/v1/verify';
 const API_KEY = process.env.EASYSLIP_API_KEY;
 
-// Expected receiver details
 const EXPECTED_RECEIVER = {
   name: {
-    th: "นาย บรรณศาสตร์ ว",
-    en: "MR. BANNASART W"
+    th: "นาย รนกฤต เ",
+    en: "MR. RONNAKRIT C"
   },
-  account: "XXX-X-XX245-7",
+  account: "XXX-X-XX271-7",
   type: "BANKAC"
 };
 

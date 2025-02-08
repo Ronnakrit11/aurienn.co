@@ -185,8 +185,8 @@ export default function DepositPage() {
     {
       id: 'bank',
       name: 'Bank Transfer',
-      accountNumber: '192-2-95245-7',
-      accountName: 'นายบรรณศาสตร์ วงษ์วิจิตสุข'
+      accountNumber: '131-8-09271-7',
+      accountName: 'นายรนกฤต เชียรวิชัย'
     }
   ];
 
