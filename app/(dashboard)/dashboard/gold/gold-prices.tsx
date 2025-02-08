@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -81,38 +81,42 @@ export function GoldPrices() {
   const [isSellProcessing, setIsSellProcessing] = useState(false);
   const [selectedGoldType, setSelectedGoldType] = useState<string>("");
 
-  useEffect(() => {
-    const loadSettings = () => {
-      const savedSettings = localStorage.getItem('goldProductSettings');
-      if (!savedSettings) {
-        const defaultSettings = [
-          { id: 1, name: 'ทองสมาคม 96.5%', isActive: true },
-          { id: 2, name: 'ทอง 99.99%', isActive: true }
-        ];
-        localStorage.setItem('goldProductSettings', JSON.stringify(defaultSettings));
-      }
-    };
+  const filterPricesWithSettings = (prices: GoldPrice[]) => {
+    const settings = localStorage.getItem('goldProductSettings');
+    const productSettings = settings ? JSON.parse(settings) : [];
+    
+    return prices.filter(price => {
+      const goldType = GOLD_TYPES[price.name];
+      if (!goldType) return false;
+      
+      const setting = productSettings.find((s: ProductSettings) => s.name === goldType);
+      return setting?.isActive ?? true;
+    });
+  };
 
-    loadSettings();
+  useEffect(() => {
+    // Initialize default settings if not exist
+    const settings = localStorage.getItem('goldProductSettings');
+    if (!settings) {
+      const defaultSettings = [
+        { id: 1, name: 'ทองสมาคม 96.5%', isActive: true },
+        { id: 2, name: 'ทอง 99.99%', isActive: true }
+      ];
+      localStorage.setItem('goldProductSettings', JSON.stringify(defaultSettings));
+    }
+
+    // Initial data fetch
     fetchData();
 
+    // Set up Pusher subscription
     const channel = pusherClient.subscribe('gold-prices');
     channel.bind('price-update', (data: { prices: GoldPrice[] }) => {
-      const settings = localStorage.getItem('goldProductSettings');
-      const productSettings = settings ? JSON.parse(settings) : [];
-      
-      const filteredPrices = data.prices.filter((price) => {
-        const goldType = GOLD_TYPES[price.name];
-        if (!goldType) return false;
-        
-        const setting = productSettings.find((s: any) => s.name === goldType);
-        return setting?.isActive ?? true;
-      });
-      
+      const filteredPrices = filterPricesWithSettings(data.prices);
       setPrices(filteredPrices);
       setLastUpdate(new Date());
     });
 
+    // Cleanup
     return () => {
       channel.unbind_all();
       channel.unsubscribe();
@@ -150,18 +154,8 @@ export function GoldPrices() {
           assetsResponse.json()
         ]);
 
-        // Get product settings and filter prices
-        const settings = localStorage.getItem('goldProductSettings');
-        const productSettings = settings ? JSON.parse(settings) : [];
-        
-        const filteredPrices = pricesData.filter((price: GoldPrice) => {
-          const goldType = GOLD_TYPES[price.name];
-          if (!goldType) return false;
-          
-          const setting = productSettings.find((s: any) => s.name === goldType);
-          return setting?.isActive ?? true;
-        });
-
+        // Filter prices based on current settings
+        const filteredPrices = filterPricesWithSettings(pricesData);
         setPrices(filteredPrices);
         setBalance(Number(balanceData.balance));
         
@@ -638,7 +632,8 @@ export function GoldPrices() {
                   </div>
                 </div>
 
-                <Button  onClick={() => setShowSummaryDialog(false)}
+                <Button 
+                  onClick={() => setShowSummaryDialog(false)}
                   className={`w-full mt-4 ${theme === 'dark' ? 'bg-[#333] hover:bg-[#444] text-white' : ''}`}
                 >
                   ปิด
