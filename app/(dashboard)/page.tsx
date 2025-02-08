@@ -15,7 +15,7 @@ export default function HomePage() {
             <div className="sm:text-center md:max-w-2xl md:mx-auto lg:col-span-6 lg:text-left">
               <h1 className="text-3xl font-bold text-gray-900 tracking-tight sm:text-5xl md:text-6xl">
               ลงทุนทองออนไลน์กับ
-                <span className="block text-orange-500">ห้างทองมังกรทอง</span>
+                <span className="block text-orange-500">ห้างทอง aurienn</span>
               </h1>
               <p className="mt-3 text-base text-gray-500 sm:mt-5 sm:text-xl lg:text-lg xl:text-xl">
                 ระบบออมทอง ซื้อขายทองรูปพรรณ อัพเดทราคาเเบบเรียลไทม์
