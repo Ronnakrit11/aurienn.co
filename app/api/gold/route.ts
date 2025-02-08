@@ -89,7 +89,29 @@ async function processGoldPrices(data: any[], settings: any) {
     });
 
     if (filteredData.length === 0) {
-      console.warn('No active gold products found');
+      console.warn('No active gold products found in filtered data');
+      // Return all data if no active products found to prevent empty response
+      return data.map((item: any) => {
+        if (settings) {
+          switch (item.name) {
+            case '99.99%':
+              return {
+                ...item,
+                bid: Number(item.bid) * (1 + Number(settings.gold9999Bid) / 100),
+                ask: Number(item.ask) * (1 + Number(settings.gold9999Ask) / 100)
+              };
+            case 'สมาคมฯ':
+              return {
+                ...item,
+                bid: Number(item.bid) * (1 + Number(settings.goldAssociationBid) / 100),
+                ask: Number(item.ask) * (1 + Number(settings.goldAssociationAsk) / 100)
+              };
+            default:
+              return item;
+          }
+        }
+        return item;
+      });
     }
 
     return filteredData.map((item: any) => {

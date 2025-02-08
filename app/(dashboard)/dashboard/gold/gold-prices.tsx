@@ -80,40 +80,37 @@ export function GoldPrices() {
   const [isBuyProcessing, setIsBuyProcessing] = useState(false);
   const [isSellProcessing, setIsSellProcessing] = useState(false);
   const [selectedGoldType, setSelectedGoldType] = useState<string>("");
+  const [productSettings, setProductSettings] = useState<ProductSettings[]>([]);
 
-  const filterPricesWithSettings = (prices: GoldPrice[]) => {
-    const settings = localStorage.getItem('goldProductSettings');
-    const productSettings = settings ? JSON.parse(settings) : [];
-    
+  const filterPricesWithSettings = (prices: GoldPrice[], settings: ProductSettings[]) => {
     return prices.filter(price => {
       const goldType = GOLD_TYPES[price.name];
       if (!goldType) return false;
       
-      const setting = productSettings.find((s: ProductSettings) => s.name === goldType);
-      return setting?.isActive ?? true;
+      const setting = settings.find(s => s.name === goldType);
+      return setting?.isActive ?? false;
     });
   };
 
   useEffect(() => {
-    // Initialize default settings if not exist
-    const settings = localStorage.getItem('goldProductSettings');
-    if (!settings) {
-      const defaultSettings = [
-        { id: 1, name: 'ทองสมาคม 96.5%', isActive: true },
-        { id: 2, name: 'ทอง 99.99%', isActive: true }
-      ];
-      localStorage.setItem('goldProductSettings', JSON.stringify(defaultSettings));
-    }
-
     // Initial data fetch
     fetchData();
 
     // Set up Pusher subscription
     const channel = pusherClient.subscribe('gold-prices');
-    channel.bind('price-update', (data: { prices: GoldPrice[] }) => {
-      const filteredPrices = filterPricesWithSettings(data.prices);
-      setPrices(filteredPrices);
-      setLastUpdate(new Date());
+    channel.bind('price-update', async (data: { prices: GoldPrice[] }) => {
+      try {
+        const settingsResponse = await fetch('/api/product-settings');
+        if (settingsResponse.ok) {
+          const settings = await settingsResponse.json();
+          setProductSettings(settings);
+          const filteredPrices = filterPricesWithSettings(data.prices, settings);
+          setPrices(filteredPrices);
+          setLastUpdate(new Date());
+        }
+      } catch (error) {
+        console.error('Error fetching product settings:', error);
+      }
     });
 
     // Cleanup
@@ -135,7 +132,7 @@ export function GoldPrices() {
 
   async function fetchData() {
     try {
-      const [pricesResponse, balanceResponse, assetsResponse] = await Promise.all([
+      const [pricesResponse, balanceResponse, assetsResponse, settingsResponse] = await Promise.all([
         fetch('/api/gold', {
           cache: 'no-store',
           headers: {
@@ -144,18 +141,23 @@ export function GoldPrices() {
           }
         }),
         fetch('/api/user/balance'),
-        fetch('/api/gold-assets')
+        fetch('/api/gold-assets'),
+        fetch('/api/product-settings')
       ]);
 
-      if (pricesResponse.ok && balanceResponse.ok && assetsResponse.ok) {
-        const [pricesData, balanceData, assetsData] = await Promise.all([
+      if (pricesResponse.ok && balanceResponse.ok && assetsResponse.ok && settingsResponse.ok) {
+        const [pricesData, balanceData, assetsData, settingsData] = await Promise.all([
           pricesResponse.json(),
           balanceResponse.json(),
-          assetsResponse.json()
+          assetsResponse.json(),
+          settingsResponse.json()
         ]);
 
-        // Filter prices based on current settings
-        const filteredPrices = filterPricesWithSettings(pricesData);
+        // Update product settings
+        setProductSettings(settingsData);
+        
+        // Filter prices based on active settings
+        const filteredPrices = filterPricesWithSettings(pricesData, settingsData);
         setPrices(filteredPrices);
         setBalance(Number(balanceData.balance));
         
@@ -347,6 +349,10 @@ export function GoldPrices() {
         prices.map((price, index) => {
           const goldType = GOLD_TYPES[price.name];
           if (!goldType) return null;
+
+          // Check if product is active
+          const productSetting = productSettings.find(setting => setting.name === goldType);
+          if (!productSetting?.isActive) return null;
 
           const summary = getPortfolioSummary(goldType);
           const conversionRate = BAHT_TO_GRAM[goldType];
@@ -632,9 +638,10 @@ export function GoldPrices() {
                   </div>
                 </div>
 
-                <Button 
+              
+                 <Button 
                   onClick={() => setShowSummaryDialog(false)}
-                  className={`w-full mt-4 ${theme === 'dark' ? 'bg <boltAction type="file" filePath="app/(dashboard)/dashboard/gold/gold-prices.tsx">-[#333] hover:bg-[#444] text-white' : ''}`}
+                  className={`w-full mt-4 ${theme === 'dark' ? 'bg-[#333] hover:bg-[#444] text-white' : ''}`}
                 >
                   ปิด
                 </Button>
