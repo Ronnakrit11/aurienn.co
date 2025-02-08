@@ -47,7 +47,7 @@ interface TransactionSummary {
   previousTotalCost?: number;
 }
 
-interface ProductSettings {
+interface ProductSetting {
   id: number;
   name: string;
   isActive: boolean;
@@ -80,48 +80,46 @@ export function GoldPrices() {
   const [isBuyProcessing, setIsBuyProcessing] = useState(false);
   const [isSellProcessing, setIsSellProcessing] = useState(false);
   const [selectedGoldType, setSelectedGoldType] = useState<string>("");
-
-  const filterPricesWithSettings = (prices: GoldPrice[]) => {
-    const settings = localStorage.getItem('goldProductSettings');
-    const productSettings = settings ? JSON.parse(settings) : [];
-    
-    return prices.filter(price => {
-      const goldType = GOLD_TYPES[price.name];
-      if (!goldType) return false;
-      
-      const setting = productSettings.find((s: ProductSettings) => s.name === goldType);
-      return setting?.isActive ?? true;
-    });
-  };
+  const [productSettings, setProductSettings] = useState<ProductSetting[]>([]);
 
   useEffect(() => {
-    // Initialize default settings if not exist
-    const settings = localStorage.getItem('goldProductSettings');
-    if (!settings) {
-      const defaultSettings = [
-        { id: 1, name: 'ทองสมาคม 96.5%', isActive: true },
-        { id: 2, name: 'ทอง 99.99%', isActive: true }
-      ];
-      localStorage.setItem('goldProductSettings', JSON.stringify(defaultSettings));
-    }
-
-    // Initial data fetch
     fetchData();
 
-    // Set up Pusher subscription
     const channel = pusherClient.subscribe('gold-prices');
     channel.bind('price-update', (data: { prices: GoldPrice[] }) => {
-      const filteredPrices = filterPricesWithSettings(data.prices);
-      setPrices(filteredPrices);
+      filterAndSetPrices(data.prices);
       setLastUpdate(new Date());
     });
 
-    // Cleanup
     return () => {
       channel.unbind_all();
       channel.unsubscribe();
     };
   }, []);
+
+  const filterAndSetPrices = async (prices: GoldPrice[]) => {
+    try {
+      // Fetch current product settings
+      const response = await fetch('/api/product-settings');
+      if (response.ok) {
+        const settings = await response.json();
+        setProductSettings(settings);
+        
+        // Filter prices based on active settings
+        const filteredPrices = prices.filter(price => {
+          const goldType = GOLD_TYPES[price.name];
+          if (!goldType) return false;
+          
+          const setting = settings.find((s: ProductSetting) => s.name === goldType);
+          return setting?.isActive ?? false;
+        });
+        
+        setPrices(filteredPrices);
+      }
+    } catch (error) {
+      console.error('Error fetching product settings:', error);
+    }
+  };
 
   const calculateGrams = (bathAmount: number, goldType: string) => {
     const conversionRate = BAHT_TO_GRAM[goldType] || BAHT_TO_GRAM['ทองสมาคม 96.5%'];
@@ -135,7 +133,7 @@ export function GoldPrices() {
 
   async function fetchData() {
     try {
-      const [pricesResponse, balanceResponse, assetsResponse] = await Promise.all([
+      const [pricesResponse, balanceResponse, assetsResponse, settingsResponse] = await Promise.all([
         fetch('/api/gold', {
           cache: 'no-store',
           headers: {
@@ -144,18 +142,29 @@ export function GoldPrices() {
           }
         }),
         fetch('/api/user/balance'),
-        fetch('/api/gold-assets')
+        fetch('/api/gold-assets'),
+        fetch('/api/product-settings')
       ]);
 
-      if (pricesResponse.ok && balanceResponse.ok && assetsResponse.ok) {
-        const [pricesData, balanceData, assetsData] = await Promise.all([
+      if (pricesResponse.ok && balanceResponse.ok && assetsResponse.ok && settingsResponse.ok) {
+        const [pricesData, balanceData, assetsData, settingsData] = await Promise.all([
           pricesResponse.json(),
           balanceResponse.json(),
-          assetsResponse.json()
+          assetsResponse.json(),
+          settingsResponse.json()
         ]);
 
-        // Filter prices based on current settings
-        const filteredPrices = filterPricesWithSettings(pricesData);
+        setProductSettings(settingsData);
+        
+        // Filter prices based on active settings
+        const filteredPrices = pricesData.filter((price: GoldPrice) => {
+          const goldType = GOLD_TYPES[price.name];
+          if (!goldType) return false;
+          
+          const setting = settingsData.find((s: ProductSetting) => s.name === goldType);
+          return setting?.isActive ?? false;
+        });
+
         setPrices(filteredPrices);
         setBalance(Number(balanceData.balance));
         
@@ -625,7 +634,8 @@ export function GoldPrices() {
                   <div className={`border-t ${theme === 'dark' ? 'border-[#333]' : 'border-gray-200'} pt-3`}>
                     <div className="flex justify-between text-lg font-semibold">
                       <span className={theme === 'dark' ? 'text-white' : ''}>{transactionSummary.isSell ? 'ได้รับเงิน' : 'ยอดชำระ'}</span>
-                      <span className={transactionSummary.isSell ? 'text-[#4CAF50]' : 'text-[#ef5350]'}>
+                      <span className={transactionSummary.isSell ? 'text-[#4CAF50]' : 'text-[#ef5350] ```tsx
+]'}>
                         ฿{transactionSummary.total.toLocaleString()}
                       </span>
                     </div>
