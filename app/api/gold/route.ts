@@ -26,33 +26,33 @@ async function fetchGoldPrices() {
 }
 
 async function processGoldPrices(data: any[], settings: any) {
-  return data
-    .filter((item: any) => {
-      // Only keep the gold types we want to show
-      const wantedTypes = ['สมาคมฯ', '99.99%'];
-      return wantedTypes.includes(item.name);
-    })
-    .map((item: any) => {
-      if (settings) {
-        switch (item.name) {
-          case '99.99%':
-            return {
-              ...item,
-              bid: Number(item.bid) * (1 + Number(settings.gold9999Bid) / 100),
-              ask: Number(item.ask) * (1 + Number(settings.gold9999Ask) / 100)
-            };
-          case 'สมาคมฯ':
-            return {
-              ...item,
-              bid: Number(item.bid) * (1 + Number(settings.goldAssociationBid) / 100),
-              ask: Number(item.ask) * (1 + Number(settings.goldAssociationAsk) / 100)
-            };
-          default:
-            return item;
-        }
+  // Get product settings from localStorage on client side
+  const filteredData = data.filter((item: any) => {
+    const wantedTypes = ['สมาคมฯ', '99.99%'];
+    return wantedTypes.includes(item.name);
+  });
+
+  return filteredData.map((item: any) => {
+    if (settings) {
+      switch (item.name) {
+        case '99.99%':
+          return {
+            ...item,
+            bid: Number(item.bid) * (1 + Number(settings.gold9999Bid) / 100),
+            ask: Number(item.ask) * (1 + Number(settings.gold9999Ask) / 100)
+          };
+        case 'สมาคมฯ':
+          return {
+            ...item,
+            bid: Number(item.bid) * (1 + Number(settings.goldAssociationBid) / 100),
+            ask: Number(item.ask) * (1 + Number(settings.goldAssociationAsk) / 100)
+          };
+        default:
+          return item;
       }
-      return item;
-    });
+    }
+    return item;
+  });
 }
 
 export async function GET() {

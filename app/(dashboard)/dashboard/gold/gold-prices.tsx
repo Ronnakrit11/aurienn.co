@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -80,20 +80,16 @@ export function GoldPrices() {
   const [isBuyProcessing, setIsBuyProcessing] = useState(false);
   const [isSellProcessing, setIsSellProcessing] = useState(false);
   const [selectedGoldType, setSelectedGoldType] = useState<string>("");
-  const [productSettings, setProductSettings] = useState<ProductSettings[]>([]);
 
   useEffect(() => {
     const loadSettings = () => {
       const savedSettings = localStorage.getItem('goldProductSettings');
-      if (savedSettings) {
-        setProductSettings(JSON.parse(savedSettings));
-      } else {
+      if (!savedSettings) {
         const defaultSettings = [
           { id: 1, name: 'ทองสมาคม 96.5%', isActive: true },
           { id: 2, name: 'ทอง 99.99%', isActive: true }
         ];
         localStorage.setItem('goldProductSettings', JSON.stringify(defaultSettings));
-        setProductSettings(defaultSettings);
       }
     };
 
@@ -102,7 +98,17 @@ export function GoldPrices() {
 
     const channel = pusherClient.subscribe('gold-prices');
     channel.bind('price-update', (data: { prices: GoldPrice[] }) => {
-      const filteredPrices = filterActiveProducts(data.prices);
+      const settings = localStorage.getItem('goldProductSettings');
+      const productSettings = settings ? JSON.parse(settings) : [];
+      
+      const filteredPrices = data.prices.filter((price) => {
+        const goldType = GOLD_TYPES[price.name];
+        if (!goldType) return false;
+        
+        const setting = productSettings.find((s: any) => s.name === goldType);
+        return setting?.isActive ?? true;
+      });
+      
       setPrices(filteredPrices);
       setLastUpdate(new Date());
     });
@@ -112,16 +118,6 @@ export function GoldPrices() {
       channel.unsubscribe();
     };
   }, []);
-
-  const filterActiveProducts = (prices: GoldPrice[]) => {
-    return prices.filter(price => {
-      const goldType = GOLD_TYPES[price.name];
-      if (!goldType) return false;
-      
-      const setting = productSettings.find(s => s.name === goldType);
-      return setting?.isActive ?? true;
-    });
-  };
 
   const calculateGrams = (bathAmount: number, goldType: string) => {
     const conversionRate = BAHT_TO_GRAM[goldType] || BAHT_TO_GRAM['ทองสมาคม 96.5%'];
@@ -154,7 +150,18 @@ export function GoldPrices() {
           assetsResponse.json()
         ]);
 
-        const filteredPrices = filterActiveProducts(pricesData);
+        // Get product settings and filter prices
+        const settings = localStorage.getItem('goldProductSettings');
+        const productSettings = settings ? JSON.parse(settings) : [];
+        
+        const filteredPrices = pricesData.filter((price: GoldPrice) => {
+          const goldType = GOLD_TYPES[price.name];
+          if (!goldType) return false;
+          
+          const setting = productSettings.find((s: any) => s.name === goldType);
+          return setting?.isActive ?? true;
+        });
+
         setPrices(filteredPrices);
         setBalance(Number(balanceData.balance));
         
@@ -631,8 +638,7 @@ export function GoldPrices() {
                   </div>
                 </div>
 
-                <Button 
-                  onClick={() => setShowSummaryDialog(false)}
+                <Button  onClick={() => setShowSummaryDialog(false)}
                   className={`w-full mt-4 ${theme === 'dark' ? 'bg-[#333] hover:bg-[#444] text-white' : ''}`}
                 >
                   ปิด

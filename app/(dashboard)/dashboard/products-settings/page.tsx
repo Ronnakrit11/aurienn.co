@@ -69,7 +69,6 @@ export default function ProductsSettingsPage() {
       </section>
     );
   }
-
   const handleToggleProduct = async (productId: number) => {
     try {
       const updatedProducts = products.map(product => 
@@ -77,10 +76,12 @@ export default function ProductsSettingsPage() {
           ? { ...product, isActive: !product.isActive }
           : product
       );
-      setProducts(updatedProducts);
-      localStorage.setItem('goldProductSettings', JSON.stringify(updatedProducts));
       
-      // Force reload prices after toggling
+      // Save to localStorage
+      localStorage.setItem('goldProductSettings', JSON.stringify(updatedProducts));
+      setProducts(updatedProducts);
+      
+      // Force reload prices
       window.location.reload();
       
       toast.success('Product status updated successfully');
@@ -89,6 +90,7 @@ export default function ProductsSettingsPage() {
       toast.error('Failed to update product status');
     }
   };
+  
 
   if (loading) {
     return (
