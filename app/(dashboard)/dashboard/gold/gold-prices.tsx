@@ -96,29 +96,37 @@ export function GoldPrices() {
     // Initial data fetch
     fetchData();
 
-    // Set up Pusher subscription
-    const channel = pusherClient.subscribe('gold-prices');
-    channel.bind('price-update', async (data: { prices: GoldPrice[] }) => {
-      try {
-        const settingsResponse = await fetch('/api/product-settings');
-        if (settingsResponse.ok) {
-          const settings = await settingsResponse.json();
-          setProductSettings(settings);
-          const filteredPrices = filterPricesWithSettings(data.prices, settings);
-          setPrices(filteredPrices);
-          setLastUpdate(new Date());
-        }
-      } catch (error) {
-        console.error('Error fetching product settings:', error);
-      }
+    // Set up Pusher subscriptions
+    const priceChannel = pusherClient.subscribe('gold-prices');
+    const settingsChannel = pusherClient.subscribe('product-settings');
+
+    // Handle price updates
+    priceChannel.bind('price-update', async (data: { prices: GoldPrice[] }) => {
+      const filteredPrices = filterPricesWithSettings(data.prices, productSettings);
+      setPrices(filteredPrices);
+      setLastUpdate(new Date());
+    });
+
+    // Handle settings updates
+    settingsChannel.bind('settings-update', (data: { settings: ProductSettings[] }) => {
+      setProductSettings(data.settings);
+      // Re-filter prices with new settings
+      setPrices(prevPrices => filterPricesWithSettings(prevPrices, data.settings));
     });
 
     // Cleanup
     return () => {
-      channel.unbind_all();
-      channel.unsubscribe();
+      priceChannel.unbind_all();
+      settingsChannel.unbind_all();
+      priceChannel.unsubscribe();
+      settingsChannel.unsubscribe();
     };
   }, []);
+
+  // Update prices when settings change
+  useEffect(() => {
+    setPrices(prevPrices => filterPricesWithSettings(prevPrices, productSettings));
+  }, [productSettings]);
 
   const calculateGrams = (bathAmount: number, goldType: string) => {
     const conversionRate = BAHT_TO_GRAM[goldType] || BAHT_TO_GRAM['ทองสมาคม 96.5%'];

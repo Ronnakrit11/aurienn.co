@@ -3,6 +3,7 @@ import { db } from '@/lib/db/drizzle';
 import { productSettings } from '@/lib/db/schema';
 import { getUser } from '@/lib/db/queries';
 import { eq } from 'drizzle-orm';
+import { pusherServer } from '@/lib/pusher';
 
 const DEFAULT_PRODUCTS = [
   { name: 'ทองสมาคม 96.5%', isActive: true },
@@ -81,6 +82,17 @@ export async function POST(request: Request) {
         updatedBy: user.id,
       });
     }
+
+    // Fetch all current settings to broadcast
+    const currentSettings = await db
+      .select()
+      .from(productSettings)
+      .orderBy(productSettings.name);
+
+    // Trigger Pusher event with updated settings
+    await pusherServer.trigger('product-settings', 'settings-update', {
+      settings: currentSettings
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
