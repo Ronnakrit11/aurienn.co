@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ShieldAlert, Package, Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
+import { ShieldAlert, Package, Loader2, Plus, Pencil, Trash2, Scissors } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useUser } from '@/lib/auth';
 import { redirect } from 'next/navigation';
@@ -35,6 +35,7 @@ export default function GoldStockPage() {
   const [goldAssets, setGoldAssets] = useState<GoldAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isCutDialogOpen, setIsCutDialogOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<GoldAsset | null>(null);
   const [formData, setFormData] = useState({
@@ -42,6 +43,7 @@ export default function GoldStockPage() {
     grams: '',
     purchasePrice: '',
   });
+  const [cutAmount, setCutAmount] = useState('');
 
   useEffect(() => {
     fetchGoldAssets();
@@ -144,6 +146,42 @@ export default function GoldStockPage() {
     } catch (error) {
       console.error('Error managing gold stock:', error);
       toast.error(selectedAsset ? 'Failed to update gold stock' : 'Failed to add gold stock');
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  async function handleCutStock() {
+    if (!selectedAsset || !cutAmount) return;
+    
+    setIsProcessing(true);
+    try {
+      const bathAmount = calculateBaht(Number(cutAmount));
+      
+      const response = await fetch('/api/management/gold-stock/cut', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: selectedAsset.id,
+          cutAmount: bathAmount,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to cut stock');
+      }
+
+      toast.success('Stock cut successfully');
+      setIsCutDialogOpen(false);
+      setCutAmount('');
+      setSelectedAsset(null);
+      fetchGoldAssets();
+    } catch (error) {
+      console.error('Error cutting stock:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to cut stock');
     } finally {
       setIsProcessing(false);
     }
@@ -296,6 +334,17 @@ export default function GoldStockPage() {
                             <Button
                               variant="outline"
                               size="sm"
+                              onClick={() => {
+                                setSelectedAsset(asset);
+                                setIsCutDialogOpen(true);
+                              }}
+                              className={`${theme === 'dark' ? 'border-[#2A2A2A] hover:bg-[#202020]' : ''} text-yellow-600`}
+                            >
+                              <Scissors className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
                               onClick={() => handleEdit(asset)}
                               className={theme === 'dark' ? 'border-[#2A2A2A] hover:bg-[#202020]' : ''}
                             >
@@ -329,6 +378,7 @@ export default function GoldStockPage() {
         </CardContent>
       </Card>
 
+      {/* Add/Edit Stock Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
           <DialogHeader>
@@ -395,6 +445,72 @@ export default function GoldStockPage() {
               )}
             </Button>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cut Stock Dialog */}
+      <Dialog open={isCutDialogOpen} onOpenChange={setIsCutDialogOpen}>
+        <DialogContent className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
+          <DialogHeader>
+            <DialogTitle className={theme === 'dark' ? 'text-white' : ''}>
+              ตัด Stock ทอง
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selectedAsset && (
+              <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
+                <p className={`font-medium ${theme === 'dark' ? 'text-white' : ''}`}>
+                  จำนวนคงเหลือ: {Number(selectedAsset.amount).toFixed(4)} บาท
+                </p>
+                <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                  ({calculateGrams(Number(selectedAsset.amount))} กรัม)
+                </p>
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="cutAmount" className={theme === 'dark' ? 'text-white' : ''}>
+                จำนวนที่ต้องการตัด (กรัม)
+              </Label>
+              <Input
+                id="cutAmount"
+                type="number"
+                step="0.01"
+                value={cutAmount}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (selectedAsset) {
+                    const maxGrams = Number(calculateGrams(Number(selectedAsset.amount)));
+                    if (value === '' || Number(value) <= maxGrams) {
+                      setCutAmount(value);
+                    }
+                  }
+                }}
+                placeholder="ระบุจำนวนกรัมที่ต้องการตัด"
+                className={theme === 'dark' ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}
+              />
+              {cutAmount && (
+                <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {calculateBaht(Number(cutAmount))} บาท
+                </p>
+              )}
+            </div>
+
+            <Button
+              onClick={handleCutStock}
+              className="w-full bg-yellow-600 hover:bg-yellow-700 text-white"
+              disabled={!cutAmount || Number(cutAmount) <= 0 || isProcessing}
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  กำลังตัด Stock...
+                </>
+              ) : (
+                'ยืนยันการตัด Stock'
+              )}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </section>
