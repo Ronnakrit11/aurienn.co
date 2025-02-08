@@ -11,6 +11,7 @@ import { useUser } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { toast } from 'sonner';
 import { useTheme } from '@/lib/theme-provider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface GoldAsset {
   id: number;
@@ -19,19 +20,23 @@ interface GoldAsset {
   purchasePrice: string;
 }
 
-const BAHT_TO_GRAM = 15.2; // 1 baht = 15.2 grams for 96.5% gold
+const BAHT_TO_GRAM = {
+  'ทองสมาคม 96.5%': 15.2,
+  'ทอง 99.99%': 15.244
+}; 
 
-const calculateGrams = (bathAmount: number) => {
-  return (bathAmount * BAHT_TO_GRAM).toFixed(2);
+const calculateGrams = (bathAmount: number, goldType: string) => {
+  const conversionRate = BAHT_TO_GRAM[goldType as keyof typeof BAHT_TO_GRAM] || BAHT_TO_GRAM['ทองสมาคม 96.5%'];
+  return (bathAmount * conversionRate).toFixed(2);
 };
 
-const calculateBaht = (gramAmount: number) => {
-  return (gramAmount / BAHT_TO_GRAM).toFixed(4);
+const calculateBaht = (gramAmount: number, goldType: string) => {
+  const conversionRate = BAHT_TO_GRAM[goldType as keyof typeof BAHT_TO_GRAM] || BAHT_TO_GRAM['ทองสมาคม 96.5%'];
+  return (gramAmount / conversionRate).toFixed(4);
 };
 
 export default function GoldStockPage() {
   const { user } = useUser();
-  const { theme } = useTheme();
   const [goldAssets, setGoldAssets] = useState<GoldAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -44,6 +49,8 @@ export default function GoldStockPage() {
     purchasePrice: '',
   });
   const [cutAmount, setCutAmount] = useState('');
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
   useEffect(() => {
     fetchGoldAssets();
@@ -56,11 +63,11 @@ export default function GoldStockPage() {
   if (user.role !== 'admin') {
     return (
       <section className="flex-1 p-4 lg:p-8">
-        <Card className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
+        <Card className={isDark ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <ShieldAlert className="h-12 w-12 text-orange-500 mb-4" />
-            <h2 className={`text-xl font-semibold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Access Denied</h2>
-            <p className={`text-center max-w-md ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+            <h2 className={`text-xl font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>Access Denied</h2>
+            <p className={`text-center max-w-md ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
               Only administrators have access to gold stock management.
             </p>
           </CardContent>
@@ -74,11 +81,7 @@ export default function GoldStockPage() {
       const response = await fetch('/api/gold-assets');
       if (response.ok) {
         const data = await response.json();
-        // Filter for admin's 96.5% gold assets only
-        const adminGoldAssets = data.filter((asset: GoldAsset) => 
-          asset.goldType === 'ทองสมาคม 96.5%'
-        );
-        setGoldAssets(adminGoldAssets);
+        setGoldAssets(data);
       }
     } catch (error) {
       console.error('Error fetching gold assets:', error);
@@ -94,7 +97,7 @@ export default function GoldStockPage() {
 
     try {
       // Convert grams to baht before sending to API
-      const bathAmount = calculateBaht(Number(formData.grams));
+      const bathAmount = calculateBaht(Number(formData.grams), formData.goldType);
 
       if (selectedAsset) {
         // Update existing stock
@@ -156,7 +159,7 @@ export default function GoldStockPage() {
     
     setIsProcessing(true);
     try {
-      const bathAmount = calculateBaht(Number(cutAmount));
+      const bathAmount = calculateBaht(Number(cutAmount), selectedAsset.goldType);
       
       const response = await fetch('/api/management/gold-stock/cut', {
         method: 'POST',
@@ -191,7 +194,7 @@ export default function GoldStockPage() {
     setSelectedAsset(asset);
     setFormData({
       goldType: asset.goldType,
-      grams: calculateGrams(Number(asset.amount)),
+      grams: calculateGrams(Number(asset.amount), asset.goldType),
       purchasePrice: asset.purchasePrice,
     });
     setIsDialogOpen(true);
@@ -227,7 +230,7 @@ export default function GoldStockPage() {
   return (
     <section className="flex-1 p-4 lg:p-8">
       <div className="flex justify-between items-center mb-6">
-        <h1 className={`text-lg lg:text-2xl font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+        <h1 className={`text-lg lg:text-2xl font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
           จัดการ Stock ทอง
         </h1>
         <Button 
@@ -247,11 +250,11 @@ export default function GoldStockPage() {
         </Button>
       </div>
 
-      <Card className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
+      <Card className={isDark ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
             <Package className="h-6 w-6 text-orange-500" />
-            <span className={theme === 'dark' ? 'text-white' : ''}>Gold Stock Overview</span>
+            <span className={isDark ? 'text-white' : ''}>Gold Stock Overview</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -262,25 +265,25 @@ export default function GoldStockPage() {
           ) : goldAssets.length > 0 ? (
             <div className="space-y-4">
               <div className={`p-6 border rounded-lg ${
-                theme === 'dark' 
+                isDark 
                   ? 'bg-[#1a1a1a] border-[#2A2A2A]' 
                   : 'bg-white border-gray-200'
               }`}>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
-                    <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <h3 className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Total Gold Stock
                     </h3>
-                    <p className={`text-2xl font-bold mt-2 ${theme === 'dark' ? 'text-white' : ''}`}>
+                    <p className={`text-2xl font-bold mt-2 ${isDark ? 'text-white' : ''}`}>
                       {totalGoldStock.toFixed(4)} บาท
                     </p>
-                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                      ({calculateGrams(totalGoldStock)} กรัม)
+                    <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      ({calculateGrams(totalGoldStock, 'ทองสมาคม 96.5%')} กรัม)
                     </p>
                   </div>
                   
                   <div>
-                    <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <h3 className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Total Value
                     </h3>
                     <p className={`text-2xl font-bold mt-2 text-orange-500`}>
@@ -289,10 +292,10 @@ export default function GoldStockPage() {
                   </div>
                   
                   <div>
-                    <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <h3 className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                       Average Price
                     </h3>
-                    <p className={`text-2xl font-bold mt-2 ${theme === 'dark' ? 'text-white' : ''}`}>
+                    <p className={`text-2xl font-bold mt-2 ${isDark ? 'text-white' : ''}`}>
                       ฿{averagePrice.toLocaleString()}
                     </p>
                   </div>
@@ -301,30 +304,30 @@ export default function GoldStockPage() {
 
               {/* Stock History */}
               <div className="mt-6">
-                <h3 className={`text-lg font-medium mb-4 ${theme === 'dark' ? 'text-white' : ''}`}>Stock History</h3>
+                <h3 className={`text-lg font-medium mb-4 ${isDark ? 'text-white' : ''}`}>Stock History</h3>
                 <div className="space-y-4">
                   {goldAssets.map((asset) => (
                     <div
                       key={asset.id}
                       className={`p-4 border rounded-lg ${
-                        theme === 'dark' 
+                        isDark 
                           ? 'bg-[#1a1a1a] border-[#2A2A2A]' 
                           : 'bg-white border-gray-200'
                       }`}
                     >
                       <div className="flex justify-between items-start">
                         <div>
-                          <p className={`font-medium ${theme === 'dark' ? 'text-white' : ''}`}>
+                          <p className={`font-medium ${isDark ? 'text-white' : ''}`}>
                             {asset.goldType}
                           </p>
-                          <div className={`mt-1 space-y-1 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                          <div className={`mt-1 space-y-1 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                             <p>จำนวน: {Number(asset.amount).toFixed(4)} บาท</p>
-                            <p>({calculateGrams(Number(asset.amount))} กรัม)</p>
+                            <p>({calculateGrams(Number(asset.amount), asset.goldType)} กรัม)</p>
                             <p>ราคาซื้อ: ฿{Number(asset.purchasePrice).toLocaleString()}/บาท</p>
                           </div>
                         </div>
                         <div className="flex flex-col items-end gap-2">
-                          <p className={`font-medium ${theme === 'dark' ? 'text-white' : ''}`}>
+                          <p className={`font-medium ${isDark ? 'text-white' : ''}`}>
                             มูลค่ารวม
                           </p>
                           <p className="text-orange-500 font-bold">
@@ -338,7 +341,7 @@ export default function GoldStockPage() {
                                 setSelectedAsset(asset);
                                 setIsCutDialogOpen(true);
                               }}
-                              className={`${theme === 'dark' ? 'border-[#2A2A2A] hover:bg-[#202020]' : ''} text-yellow-600`}
+                              className={`${isDark ? 'border-[#2A2A2A] hover:bg-[#202020]' : ''} text-yellow-600`}
                             >
                               <Scissors className="h-4 w-4" />
                             </Button>
@@ -346,7 +349,7 @@ export default function GoldStockPage() {
                               variant="outline"
                               size="sm"
                               onClick={() => handleEdit(asset)}
-                              className={theme === 'dark' ? 'border-[#2A2A2A] hover:bg-[#202020]' : ''}
+                              className={isDark ? 'border-[#2A2A2A] hover:bg-[#202020]' : ''}
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
@@ -355,7 +358,7 @@ export default function GoldStockPage() {
                               size="sm"
                               onClick={() => handleDelete(asset.id)}
                               className={`text-red-500 ${
-                                theme === 'dark' 
+                                isDark 
                                   ? 'border-[#2A2A2A] hover:bg-[#202020]' 
                                   : 'hover:bg-red-50'
                               }`}
@@ -371,7 +374,7 @@ export default function GoldStockPage() {
               </div>
             </div>
           ) : (
-            <div className={`text-center py-8 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+            <div className={`text-center py-8 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
               No gold stock data available
             </div>
           )}
@@ -380,25 +383,35 @@ export default function GoldStockPage() {
 
       {/* Add/Edit Stock Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
+        <DialogContent className={isDark ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
           <DialogHeader>
-            <DialogTitle className={theme === 'dark' ? 'text-white' : ''}>
+            <DialogTitle className={isDark ? 'text-white' : ''}>
               {selectedAsset ? 'แก้ไข Stock ทอง' : 'เพิ่ม Stock ทอง'}
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <Label htmlFor="goldType" className={theme === 'dark' ? 'text-white' : ''}>ประเภททอง</Label>
-              <Input
-                id="goldType"
+              <Label htmlFor="goldType" className={isDark ? 'text-white' : ''}>ประเภททอง</Label>
+              <Select
                 value={formData.goldType}
-                disabled
-                className={theme === 'dark' ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}
-              />
+                onValueChange={(value) => setFormData(prev => ({ ...prev, goldType: value }))}
+              >
+                <SelectTrigger className={isDark ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}>
+                  <SelectValue placeholder="Select gold type" />
+                </SelectTrigger>
+                <SelectContent className={isDark ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}>
+                  <SelectItem value="ทองสมาคม 96.5%" className={isDark ? 'text-white focus:bg-[#252525]' : ''}>
+                    ทองสมาคม 96.5%
+                  </SelectItem>
+                  <SelectItem value="ทอง 99.99%" className={isDark ? 'text-white focus:bg-[#252525]' : ''}>
+                    ทอง 99.99%
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
-              <Label htmlFor="grams" className={theme === 'dark' ? 'text-white' : ''}>จำนวน (กรัม)</Label>
+              <Label htmlFor="grams" className={isDark ? 'text-white' : ''}>จำนวน (กรัม)</Label>
               <Input
                 id="grams"
                 type="number"
@@ -406,18 +419,18 @@ export default function GoldStockPage() {
                 value={formData.grams}
                 onChange={(e) => setFormData(prev => ({ ...prev, grams: e.target.value }))}
                 placeholder="ระบุจำนวนกรัม"
-                className={theme === 'dark' ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}
+                className={isDark ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}
                 required
               />
               {formData.grams && (
-                <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {calculateBaht(Number(formData.grams))} บาท
+                <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {calculateBaht(Number(formData.grams), formData.goldType)} บาท
                 </p>
               )}
             </div>
 
             <div>
-              <Label htmlFor="purchasePrice" className={theme === 'dark' ? 'text-white' : ''}>ราคาต่อหน่วย (บาท)</Label>
+              <Label htmlFor="purchasePrice" className={isDark ? 'text-white' : ''}>ราคาต่อหน่วย (บาท)</Label>
               <Input
                 id="purchasePrice"
                 type="number"
@@ -425,7 +438,7 @@ export default function GoldStockPage() {
                 value={formData.purchasePrice}
                 onChange={(e) => setFormData(prev => ({ ...prev, purchasePrice: e.target.value }))}
                 placeholder="ระบุราคาต่อหน่วย"
-                className={theme === 'dark' ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}
+                className={isDark ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}
                 required
               />
             </div>
@@ -450,26 +463,26 @@ export default function GoldStockPage() {
 
       {/* Cut Stock Dialog */}
       <Dialog open={isCutDialogOpen} onOpenChange={setIsCutDialogOpen}>
-        <DialogContent className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
+        <DialogContent className={isDark ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
           <DialogHeader>
-            <DialogTitle className={theme === 'dark' ? 'text-white' : ''}>
+            <DialogTitle className={isDark ? 'text-white' : ''}>
               ตัด Stock ทอง
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {selectedAsset && (
-              <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
-                <p className={`font-medium ${theme === 'dark' ? 'text-white' : ''}`}>
+              <div className={`p-4 rounded-lg ${isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
+                <p className={`font-medium ${isDark ? 'text-white' : ''}`}>
                   จำนวนคงเหลือ: {Number(selectedAsset.amount).toFixed(4)} บาท
                 </p>
-                <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                  ({calculateGrams(Number(selectedAsset.amount))} กรัม)
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  ({calculateGrams(Number(selectedAsset.amount), selectedAsset.goldType)} กรัม)
                 </p>
               </div>
             )}
 
             <div>
-              <Label htmlFor="cutAmount" className={theme === 'dark' ? 'text-white' : ''}>
+              <Label htmlFor="cutAmount" className={isDark ? 'text-white' : ''}>
                 จำนวนที่ต้องการตัด (กรัม)
               </Label>
               <Input
@@ -480,18 +493,18 @@ export default function GoldStockPage() {
                 onChange={(e) => {
                   const value = e.target.value;
                   if (selectedAsset) {
-                    const maxGrams = Number(calculateGrams(Number(selectedAsset.amount)));
+                    const maxGrams = Number(calculateGrams(Number(selectedAsset.amount), selectedAsset.goldType));
                     if (value === '' || Number(value) <= maxGrams) {
                       setCutAmount(value);
                     }
                   }
                 }}
                 placeholder="ระบุจำนวนกรัมที่ต้องการตัด"
-                className={theme === 'dark' ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}
+                className={isDark ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}
               />
-              {cutAmount && (
-                <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                  {calculateBaht(Number(cutAmount))} บาท
+              {cutAmount && selectedAsset && (
+                <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {calculateBaht(Number(cutAmount), selectedAsset.goldType)} บาท
                 </p>
               )}
             </div>

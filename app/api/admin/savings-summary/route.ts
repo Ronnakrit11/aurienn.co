@@ -4,8 +4,7 @@ import { goldAssets, users } from '@/lib/db/schema';
 import { getUser } from '@/lib/db/queries';
 import { eq, sql, and, ne } from 'drizzle-orm';
 
-const ADMIN_EMAIL = 'ronnakritnook1@gmail.com';
-const GOLD_TYPE = 'ทองสมาคม 96.5%';
+const ADMIN_EMAIL = 'adminfortest@gmail.com';
 
 export async function GET() {
   try {
@@ -18,21 +17,22 @@ export async function GET() {
       );
     }
 
-    // Get admin's stock (total holdings)
-    const [adminStock] = await db
+    // Get admin's stock for each gold type
+    const adminStocks = await db
       .select({
+        goldType: goldAssets.goldType,
         totalAmount: sql<string>`COALESCE(sum(${goldAssets.amount}), '0')`
       })
       .from(goldAssets)
       .leftJoin(users, eq(goldAssets.userId, users.id))
       .where(
         and(
-          eq(users.email, ADMIN_EMAIL),
-          eq(goldAssets.goldType, GOLD_TYPE)
+          eq(users.email, ADMIN_EMAIL)
         )
-      );
+      )
+      .groupBy(goldAssets.goldType);
 
-    // Get user holdings (excluding admin)
+    // Get user holdings for each gold type (excluding admin)
     const userSummaries = await db
       .select({
         userId: users.id,
@@ -48,7 +48,6 @@ export async function GET() {
       .where(
         and(
           sql`${goldAssets.amount} > 0`,
-          eq(goldAssets.goldType, GOLD_TYPE),
           ne(users.role, 'admin')
         )
       )
@@ -71,8 +70,7 @@ export async function GET() {
       .where(
         and(
           sql`${goldAssets.amount} > 0`,
-          ne(users.email, ADMIN_EMAIL),
-          eq(goldAssets.goldType, GOLD_TYPE)
+          ne(users.role, 'admin')
         )
       )
       .groupBy(goldAssets.goldType);
@@ -80,7 +78,7 @@ export async function GET() {
     return NextResponse.json({
       goldHoldings,
       userSummaries,
-      adminStock: adminStock?.totalAmount || '0'
+      adminStocks
     });
   } catch (error) {
     console.error('Error fetching savings summary:', error);

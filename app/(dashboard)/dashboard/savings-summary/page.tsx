@@ -24,24 +24,25 @@ interface UserSummary {
   totalValue: string;
 }
 
+interface AdminStock {
+  goldType: string;
+  totalAmount: string;
+}
+
 interface SummaryData {
   goldHoldings: GoldHolding[];
   userSummaries: UserSummary[];
-  adminStock: string;
+  adminStocks: AdminStock[];
 }
 
-interface GoldAsset {
-  goldType: string;
-  amount: string;
-  purchasePrice: string;
-  userId: number;
-}
+const BAHT_TO_GRAM = {
+  'ทองสมาคม 96.5%': 15.2,
+  'ทอง 99.99%': 15.244
+};
 
-const BAHT_TO_GRAM = 15.2; // 1 baht = 15.2 grams for 96.5% gold
-const GOLD_TYPE = 'ทองสมาคม 96.5%';
-
-const calculateGrams = (bathAmount: number) => {
-  return (bathAmount * BAHT_TO_GRAM).toFixed(2);
+const calculateGrams = (bathAmount: number, goldType: string) => {
+  const conversionRate = BAHT_TO_GRAM[goldType as keyof typeof BAHT_TO_GRAM] || BAHT_TO_GRAM['ทองสมาคม 96.5%'];
+  return (bathAmount * conversionRate).toFixed(2);
 };
 
 const SavingsSummaryPage = () => {
@@ -49,68 +50,14 @@ const SavingsSummaryPage = () => {
   const { theme } = useTheme();
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [adminStock, setAdminStock] = useState({
-    amount: 0,
-    grams: 0
-  });
-  const [totalUserGoldAmount, setTotalUserGoldAmount] = useState(0);
   const isDark = theme === 'dark';
 
   const fetchData = async () => {
     try {
-      const [summaryResponse, assetsResponse] = await Promise.all([
-        fetch('/api/admin/savings-summary'),
-        fetch('/api/gold-assets')
-      ]);
-
-      if (summaryResponse.ok && assetsResponse.ok) {
-        const [summaryData, assetsData] = await Promise.all([
-          summaryResponse.json(),
-          assetsResponse.json()
-        ]);
-
-        // Calculate admin's total stock from assets
-        const adminAssets = (assetsData as GoldAsset[]).filter(asset => 
-          asset.goldType === GOLD_TYPE
-        );
-
-        const totalStock = adminAssets.reduce((total: number, asset: GoldAsset) => 
-          total + Number(asset.amount), 0
-        );
-
-        setAdminStock({
-          amount: totalStock,
-          grams: Number(calculateGrams(totalStock))
-        });
-
-        // Filter user summaries to only include the correct gold type
-        const filteredSummaries = summaryData.userSummaries.filter(
-          (summary: UserSummary) => summary.goldType === GOLD_TYPE && summary.userRole !== 'admin'
-        );
-
-        // Group summaries by user and combine amounts
-        const groupedSummaries = filteredSummaries.reduce((acc: UserSummary[], summary: UserSummary) => {
-          const existingUser = acc.find(s => s.userId === summary.userId);
-          if (existingUser) {
-            existingUser.totalAmount = (Number(existingUser.totalAmount) + Number(summary.totalAmount)).toString();
-            existingUser.totalValue = (Number(existingUser.totalValue) + Number(summary.totalValue)).toString();
-          } else if (Number(summary.totalAmount) > 0) {
-            acc.push(summary);
-          }
-          return acc;
-        }, []);
-
-        setSummaryData({
-          ...summaryData,
-          userSummaries: groupedSummaries
-        });
-
-        // Calculate total user gold amount
-        const totalUserAmount = groupedSummaries.reduce(
-          (sum: number, summary: UserSummary) => sum + Number(summary.totalAmount),
-          0
-        );
-        setTotalUserGoldAmount(totalUserAmount);
+      const response = await fetch('/api/admin/savings-summary');
+      if (response.ok) {
+        const data = await response.json();
+        setSummaryData(data);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -188,39 +135,54 @@ const SavingsSummaryPage = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {/* Total Stock */}
-            <div className={`p-4 rounded-lg ${isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
-              <h3 className={`text-lg font-medium mb-2 ${isDark ? 'text-white' : ''}`}>
-                จำนวนรวม (Stock)
-              </h3>
-              <div className={`space-y-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                <p>{adminStock.amount.toFixed(4)} บาท</p>
-                <p>({adminStock.grams.toFixed(2)} กรัม)</p>
-              </div>
-            </div>
+          <div className="space-y-6">
+            {['ทองสมาคม 96.5%', 'ทอง 99.99%'].map(goldType => {
+              const adminStock = summaryData.adminStocks.find(s => s.goldType === goldType);
+              const userHoldings = summaryData.goldHoldings.find(h => h.goldType === goldType);
+              
+              const adminAmount = Number(adminStock?.totalAmount || 0);
+              const userAmount = Number(userHoldings?.totalAmount || 0);
+              const availableAmount = adminAmount - userAmount;
 
-            {/* User Holdings */}
-            <div className={`p-4 rounded-lg ${isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
-              <h3 className={`text-lg font-medium mb-2 ${isDark ? 'text-white' : ''}`}>
-                ลูกค้าถือครองทั้งหมด
-              </h3>
-              <div className={`space-y-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                <p>{totalUserGoldAmount.toFixed(4)} บาท</p>
-                <p>({calculateGrams(totalUserGoldAmount)} กรัม)</p>
-              </div>
-            </div>
+              return (
+                <div key={goldType} className={`p-4 rounded-lg ${isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
+                  <h3 className={`text-lg font-medium mb-4 ${isDark ? 'text-white' : ''}`}>
+                    {goldType}
+                  </h3>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className={`p-4 rounded-lg ${isDark ? 'bg-[#252525]' : 'bg-white'}`}>
+                      <h4 className={`text-sm font-medium mb-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                        จำนวนรวม (Stock)
+                      </h4>
+                      <div className={`space-y-1 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                        <p>{adminAmount.toFixed(4)} บาท</p>
+                        <p>({calculateGrams(adminAmount, goldType)} กรัม)</p>
+                      </div>
+                    </div>
 
-            {/* Available Gold */}
-            <div className={`p-4 rounded-lg ${isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
-              <h3 className={`text-lg font-medium mb-2 ${isDark ? 'text-white' : ''}`}>
-                คงเหลือ
-              </h3>
-              <div className={`space-y-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                <p>{(adminStock.amount - totalUserGoldAmount).toFixed(4)} บาท</p>
-                <p>({(adminStock.grams - Number(calculateGrams(totalUserGoldAmount))).toFixed(2)} กรัม)</p>
-              </div>
-            </div>
+                    <div className={`p-4 rounded-lg ${isDark ? 'bg-[#252525]' : 'bg-white'}`}>
+                      <h4 className={`text-sm font-medium mb-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                        ลูกค้าถือครองทั้งหมด
+                      </h4>
+                      <div className={`space-y-1 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                        <p>{userAmount.toFixed(4)} บาท</p>
+                        <p>({calculateGrams(userAmount, goldType)} กรัม)</p>
+                      </div>
+                    </div>
+
+                    <div className={`p-4 rounded-lg ${isDark ? 'bg-[#252525]' : 'bg-white'}`}>
+                      <h4 className={`text-sm font-medium mb-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                        คงเหลือ
+                      </h4>
+                      <div className={`space-y-1 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                        <p>{availableAmount.toFixed(4)} บาท</p>
+                        <p>({calculateGrams(availableAmount, goldType)} กรัม)</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
@@ -237,7 +199,7 @@ const SavingsSummaryPage = () => {
           <div className="space-y-6">
             {summaryData.userSummaries.map((summary) => (
               <div
-                key={summary.userId}
+                key={`${summary.userId}-${summary.goldType}`}
                 className={`p-4 border rounded-lg ${
                   isDark ? 'border-[#2A2A2A] bg-[#1a1a1a]' : 'border-gray-200'
                 }`}
@@ -252,7 +214,7 @@ const SavingsSummaryPage = () => {
                     </p>
                     <div className={`space-y-1 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
                       <p>จำนวน: {Number(summary.totalAmount).toFixed(4)} บาท</p>
-                      <p>({calculateGrams(Number(summary.totalAmount))} กรัม)</p>
+                      <p>({calculateGrams(Number(summary.totalAmount), summary.goldType)} กรัม)</p>
                       <p>มูลค่า: ฿{Number(summary.totalValue).toLocaleString()}</p>
                     </div>
                   </div>
