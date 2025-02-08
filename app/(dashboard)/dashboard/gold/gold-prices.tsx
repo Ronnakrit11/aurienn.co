@@ -47,8 +47,21 @@ interface TransactionSummary {
   previousTotalCost?: number;
 }
 
-const GOLD_TYPE = "ทองสมาคม 96.5%"; // Gold type name
-const BAHT_TO_GRAM = 15.2; // 1 baht = 15.2 grams for 96.5% gold
+interface ProductSettings {
+  id: number;
+  name: string;
+  isActive: boolean;
+}
+
+const GOLD_TYPES: { [key: string]: string } = {
+  'สมาคมฯ': 'ทองสมาคม 96.5%',
+  '99.99%': 'ทอง 99.99%'
+};
+
+const BAHT_TO_GRAM: { [key: string]: number } = {
+  'ทองสมาคม 96.5%': 15.2,
+  'ทอง 99.99%': 15.244
+};
 
 export function GoldPrices() {
   const { theme } = useTheme();
@@ -66,16 +79,31 @@ export function GoldPrices() {
   const [transactionSummary, setTransactionSummary] = useState<TransactionSummary | null>(null);
   const [isBuyProcessing, setIsBuyProcessing] = useState(false);
   const [isSellProcessing, setIsSellProcessing] = useState(false);
+  const [selectedGoldType, setSelectedGoldType] = useState<string>("");
+  const [productSettings, setProductSettings] = useState<ProductSettings[]>([]);
 
   useEffect(() => {
+    const loadSettings = () => {
+      const savedSettings = localStorage.getItem('goldProductSettings');
+      if (savedSettings) {
+        setProductSettings(JSON.parse(savedSettings));
+      } else {
+        const defaultSettings = [
+          { id: 1, name: 'ทองสมาคม 96.5%', isActive: true },
+          { id: 2, name: 'ทอง 99.99%', isActive: true }
+        ];
+        localStorage.setItem('goldProductSettings', JSON.stringify(defaultSettings));
+        setProductSettings(defaultSettings);
+      }
+    };
+
+    loadSettings();
     fetchData();
 
     const channel = pusherClient.subscribe('gold-prices');
     channel.bind('price-update', (data: { prices: GoldPrice[] }) => {
-      const goldAssociationPrice = data.prices.find(price => price.name === 'สมาคมฯ');
-      if (goldAssociationPrice) {
-        setPrices([goldAssociationPrice]);
-      }
+      const filteredPrices = filterActiveProducts(data.prices);
+      setPrices(filteredPrices);
       setLastUpdate(new Date());
     });
 
@@ -85,10 +113,36 @@ export function GoldPrices() {
     };
   }, []);
 
+  const filterActiveProducts = (prices: GoldPrice[]) => {
+    return prices.filter(price => {
+      const goldType = GOLD_TYPES[price.name];
+      if (!goldType) return false;
+      
+      const setting = productSettings.find(s => s.name === goldType);
+      return setting?.isActive ?? true;
+    });
+  };
+
+  const calculateGrams = (bathAmount: number, goldType: string) => {
+    const conversionRate = BAHT_TO_GRAM[goldType] || BAHT_TO_GRAM['ทองสมาคม 96.5%'];
+    return (bathAmount * conversionRate).toFixed(2);
+  };
+
+  const calculateBaht = (gramAmount: number, goldType: string) => {
+    const conversionRate = BAHT_TO_GRAM[goldType] || BAHT_TO_GRAM['ทองสมาคม 96.5%'];
+    return (gramAmount / conversionRate).toFixed(4);
+  };
+
   async function fetchData() {
     try {
       const [pricesResponse, balanceResponse, assetsResponse] = await Promise.all([
-        fetch('/api/gold'),
+        fetch('/api/gold', {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        }),
         fetch('/api/user/balance'),
         fetch('/api/gold-assets')
       ]);
@@ -100,10 +154,8 @@ export function GoldPrices() {
           assetsResponse.json()
         ]);
 
-        // Filter for only สมาคมฯ gold price
-        const goldAssociationPrice = pricesData.find((price: GoldPrice) => price.name === 'สมาคมฯ');
-        setPrices(goldAssociationPrice ? [goldAssociationPrice] : []);
-        
+        const filteredPrices = filterActiveProducts(pricesData);
+        setPrices(filteredPrices);
         setBalance(Number(balanceData.balance));
         
         const combinedAssets = assetsData.reduce((acc: { [key: string]: GoldAsset }, asset: any) => {
@@ -131,14 +183,6 @@ export function GoldPrices() {
     }
   }
 
-  const calculateGrams = (bathAmount: number) => {
-    return (bathAmount * BAHT_TO_GRAM).toFixed(2);
-  };
-
-  const calculateBaht = (gramAmount: number) => {
-    return (gramAmount / BAHT_TO_GRAM).toFixed(4);
-  };
-
   const getPortfolioSummary = (goldType: string) => {
     const asset = assets.find(a => a.goldType === goldType);
     return {
@@ -149,18 +193,20 @@ export function GoldPrices() {
 
   const handleBuyClick = (price: GoldPrice) => {
     setSelectedPrice(price);
+    setSelectedGoldType(GOLD_TYPES[price.name]);
     setMoneyAmount('');
     setIsBuyDialogOpen(true);
   };
 
   const handleSellClick = (price: GoldPrice) => {
     setSelectedPrice(price);
+    setSelectedGoldType(GOLD_TYPES[price.name]);
     setSellUnits('');
     setIsSellDialogOpen(true);
   };
 
   const handleBuySubmit = async () => {
-    if (!selectedPrice || !moneyAmount) return;
+    if (!selectedPrice || !moneyAmount || !selectedGoldType) return;
   
     const moneyNum = parseFloat(moneyAmount);
     
@@ -181,7 +227,7 @@ export function GoldPrices() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          goldType: GOLD_TYPE,
+          goldType: selectedGoldType,
           amount: units,
           pricePerUnit: baseAskPrice,
           totalPrice: moneyNum,
@@ -198,7 +244,7 @@ export function GoldPrices() {
       await fetchData();
       
       setTransactionSummary({
-        goldType: GOLD_TYPE,
+        goldType: selectedGoldType,
         units,
         price: baseAskPrice,
         total: moneyNum,
@@ -217,12 +263,12 @@ export function GoldPrices() {
   };
 
   const handleSellSubmit = async () => {
-    if (!selectedPrice || !sellUnits) return;
+    if (!selectedPrice || !sellUnits || !selectedGoldType) return;
   
     setIsSellProcessing(true);
   
     try {
-      const bathAmount = calculateBaht(Number(sellUnits));
+      const bathAmount = calculateBaht(Number(sellUnits), selectedGoldType);
       const baseBidPrice = typeof selectedPrice.bid === 'string' ? 
         parseFloat(selectedPrice.bid) : selectedPrice.bid;
       
@@ -235,7 +281,7 @@ export function GoldPrices() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          goldType: GOLD_TYPE,
+          goldType: selectedGoldType,
           amount: bathAmount,
           pricePerUnit: baseBidPrice,
           totalPrice: finalTotal,
@@ -252,7 +298,7 @@ export function GoldPrices() {
       await fetchData();
   
       setTransactionSummary({
-        goldType: GOLD_TYPE,
+        goldType: selectedGoldType,
         units: Number(bathAmount),
         price: baseBidPrice,
         total: finalTotal,
@@ -292,81 +338,91 @@ export function GoldPrices() {
         อัพเดทล่าสุด: {lastUpdate.toLocaleString('th-TH')}
       </div>
 
-      {prices.map((price, index) => {
-        const summary = getPortfolioSummary(GOLD_TYPE);
+      {prices.length === 0 ? (
+        <div className={`text-center py-8 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+          ไม่มีสินค้าที่เปิดให้ซื้อขายในขณะนี้
+        </div>
+      ) : (
+        prices.map((price, index) => {
+          const goldType = GOLD_TYPES[price.name];
+          if (!goldType) return null;
 
-        return (
-          <div key={index} className={`${theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : 'bg-white'} rounded-lg border overflow-hidden`}>
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className={`w-14 h-14 ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-yellow-50'} rounded-full flex items-center justify-center`}>
-                    <Image
-                      src="/gold.png"
-                      alt="Gold"
-                      width={32}
-                      height={32}
-                      className={theme === 'dark' ? 'brightness-[10]' : ''}
-                    />
+          const summary = getPortfolioSummary(goldType);
+          const conversionRate = BAHT_TO_GRAM[goldType];
+
+          return (
+            <div key={index} className={`${theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : 'bg-white'} rounded-lg border overflow-hidden`}>
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className={`w-14 h-14 ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-yellow-50'} rounded-full flex items-center justify-center`}>
+                      <Image
+                        src="/gold.png"
+                        alt="Gold"
+                        width={32}
+                        height={32}
+                        className={theme === 'dark' ? 'brightness-[10]' : ''}
+                      />
+                    </div>
+                    <div>
+                      <h3 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{goldType}</h3>
+                      <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        1 บาท = {conversionRate} กรัม
+                      </p>
+                      {summary.units > 0.0001 && (
+                        <div>
+                          <p className="text-sm text-[#4CAF50]">
+                            พอร์ต: {summary.units.toFixed(4)} บาท
+                          </p>
+                          <p className="text-sm text-[#4CAF50]">
+                            ({calculateGrams(summary.units, goldType)} กรัม)
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => handleBuyClick(price)}
+                      className="bg-[#4CAF50] hover:bg-[#45a049] text-white h-8 w-16"
+                      size="sm"
+                    >
+                      ซื้อ
+                    </Button>
+                    <Button
+                      onClick={() => handleSellClick(price)}
+                      className="bg-[#ef5350] hover:bg-[#e53935] text-white h-8 w-16"
+                      size="sm"
+                    >
+                      ขาย
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-4">
+                  <div>
+                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>ราคารับซื้อ</p>
+                    <p className={`text-md font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                      {Number(price.bid).toLocaleString()} บาท
+                    </p>
                   </div>
                   <div>
-                    <h3 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{GOLD_TYPE}</h3>
-                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                      1 บาท = {BAHT_TO_GRAM} กรัม
+                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>ราคาขายออก</p>
+                    <p className={`text-md font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                      {Number(price.ask).toLocaleString()} บาท
                     </p>
-                    {summary.units > 0.0001 && (
-                      <div>
-                        <p className="text-sm text-[#4CAF50]">
-                          พอร์ต: {summary.units.toFixed(4)} บาท
-                        </p>
-                        <p className="text-sm text-[#4CAF50]">
-                          ({calculateGrams(summary.units)} กรัม)
-                        </p>
-                      </div>
-                    )}
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    onClick={() => handleBuyClick(price)}
-                    className="bg-[#4CAF50] hover:bg-[#45a049] text-white h-8 w-16"
-                    size="sm"
-                  >
-                    ซื้อ
-                  </Button>
-                  <Button
-                    onClick={() => handleSellClick(price)}
-                    className="bg-[#ef5350] hover:bg-[#e53935] text-white h-8 w-16"
-                    size="sm"
-                  >
-                    ขาย
-                  </Button>
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-4">
-                <div>
-                  <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>ราคารับซื้อ</p>
-                  <p className={`text-md font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                    {Number(price.bid).toLocaleString()} บาท
-                  </p>
-                </div>
-                <div>
-                  <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>ราคาขายออก</p>
-                  <p className={`text-md font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                    {Number(price.ask).toLocaleString()} บาท
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Change</p>
-                  <p className={`text-lg font-semibold ${Number(price.diff) > 0 ? 'text-[#4CAF50]' : 'text-[#ef5350]'}`}>
-                    {Number(price.diff).toFixed(2)}
-                  </p>
+                  <div className="text-right">
+                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Change</p>
+                    <p className={`text-lg font-semibold ${Number(price.diff) > 0 ? 'text-[#4CAF50]' : 'text-[#ef5350]'}`}>
+                      {Number(price.diff).toFixed(2)}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })
+      )}
 
       <Dialog open={isBuyDialogOpen} onOpenChange={setIsBuyDialogOpen}>
         <DialogContent className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A] text-white' : ''}>
@@ -389,7 +445,7 @@ export function GoldPrices() {
                 className={theme === 'dark' ? 'bg-[#1a1a1a] border-[#333] text-white' : ''}
               />
             </div>
-            {moneyAmount && selectedPrice && (
+            {moneyAmount && selectedPrice && selectedGoldType && (
               <div className="space-y-2">
                 <Label className={theme === 'dark' ? 'text-white' : ''}>จำนวนทอง</Label>
                 <div className={`space-y-1 ${theme === 'dark' ? 'text-white' : ''}`}>
@@ -397,7 +453,7 @@ export function GoldPrices() {
                     {(Number(moneyAmount) / Number(selectedPrice.ask)).toFixed(4)} บาท
                   </p>
                   <p className="text-sm text-gray-500">
-                    ({calculateGrams(Number(moneyAmount) / Number(selectedPrice.ask))} กรัม)
+                    ({calculateGrams(Number(moneyAmount) / Number(selectedPrice.ask), selectedGoldType)} กรัม)
                   </p>
                 </div>
               </div>
@@ -426,8 +482,8 @@ export function GoldPrices() {
             <DialogTitle className={theme === 'dark' ? 'text-white' : ''}>ขายทอง</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            {selectedPrice && (() => {
-              const summary = getPortfolioSummary(GOLD_TYPE);
+            {selectedPrice && selectedGoldType && (() => {
+              const summary = getPortfolioSummary(selectedGoldType);
               return summary.units > 0.0001 ? (
                 <div className={`mb-4 p-3 ${
                   theme === 'dark' 
@@ -439,7 +495,7 @@ export function GoldPrices() {
                     {summary.units.toFixed(4)} บาท
                   </p>
                   <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                    ({calculateGrams(summary.units)} กรัม)
+                    ({calculateGrams(summary.units, selectedGoldType)} กรัม)
                   </p>
                 </div>
               ) : null;
@@ -451,9 +507,9 @@ export function GoldPrices() {
                 value={sellUnits}
                 onChange={(e) => {
                   const value = e.target.value;
-                  if (selectedPrice) {
-                    const summary = getPortfolioSummary(GOLD_TYPE);
-                    const maxGrams = Number(calculateGrams(summary.units));
+                  if (selectedPrice && selectedGoldType) {
+                    const summary = getPortfolioSummary(selectedGoldType);
+                    const maxGrams = Number(calculateGrams(summary.units, selectedGoldType));
                     if (value === '' || Number(value) <= maxGrams) {
                       setSellUnits(value);
                     }
@@ -462,17 +518,17 @@ export function GoldPrices() {
                 placeholder="ระบุจำนวนกรัมที่ต้องการขาย"
                 className={theme === 'dark' ? 'bg-[#1a1a1a] border-[#333] text-white' : ''}
               />
-              {sellUnits && (
+              {sellUnits && selectedGoldType && (
                 <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                  ({calculateBaht(Number(sellUnits))} บาท)
+                  ({calculateBaht(Number(sellUnits), selectedGoldType)} บาท)
                 </p>
               )}
               <Button
                 type="button"
                 onClick={() => {
-                  if (selectedPrice) {
-                    const summary = getPortfolioSummary(GOLD_TYPE);
-                    const totalGrams = calculateGrams(summary.units);
+                  if (selectedPrice && selectedGoldType) {
+                    const summary = getPortfolioSummary(selectedGoldType);
+                    const totalGrams = calculateGrams(summary.units, selectedGoldType);
                     setSellUnits(totalGrams);
                   }
                 }}
@@ -481,11 +537,11 @@ export function GoldPrices() {
                 ขายทั้งหมด
               </Button>
             </div>
-            {sellUnits && selectedPrice && (
+            {sellUnits && selectedPrice && selectedGoldType && (
               <div className="space-y-2">
                 <Label className={theme === 'dark' ? 'text-white' : ''}>จำนวนเงินที่จะได้รับ</Label>
                 <p className="text-lg font-semibold text-[#4CAF50]">
-                  ฿{(Number(calculateBaht(Number(sellUnits))) * Number(selectedPrice.bid)).toLocaleString()}
+                  ฿{(Number(calculateBaht(Number(sellUnits), selectedGoldType)) * Number(selectedPrice.bid)).toLocaleString()}
                 </p>
               </div>
             )}
@@ -534,7 +590,7 @@ export function GoldPrices() {
                         {transactionSummary.units.toFixed(4)} บาท
                       </span>
                       <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                        ({calculateGrams(transactionSummary.units)} กรัม)
+                        ({calculateGrams(transactionSummary.units, transactionSummary.goldType)} กรัม)
                       </p>
                     </div>
                   </div>

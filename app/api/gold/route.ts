@@ -28,33 +28,18 @@ async function fetchGoldPrices() {
 async function processGoldPrices(data: any[], settings: any) {
   return data
     .filter((item: any) => {
-      const unwantedTypes = [
-        'GFG25', 'GFJ25', 'GFM25', 'SVG25', 'SVJ25', 'SVM25',
-        'GFPTM23-curr', 'GF10M23-curr', 'GF10Q23-curr', 'GF10V23-curr',
-        'GFM23-curr', 'GFQ23-curr', 'GFV23-curr', 'SVFM23-curr', 'SVFU23-curr','Update'
-      ];
-      return !unwantedTypes.includes(item.name);
+      // Only keep the gold types we want to show
+      const wantedTypes = ['สมาคมฯ', '99.99%'];
+      return wantedTypes.includes(item.name);
     })
     .map((item: any) => {
       if (settings) {
         switch (item.name) {
-          case 'GoldSpot':
-            return {
-              ...item,
-              bid: Number(item.bid) * (1 + Number(settings.goldSpotBid) / 100),
-              ask: Number(item.ask) * (1 + Number(settings.goldSpotAsk) / 100)
-            };
           case '99.99%':
             return {
               ...item,
               bid: Number(item.bid) * (1 + Number(settings.gold9999Bid) / 100),
               ask: Number(item.ask) * (1 + Number(settings.gold9999Ask) / 100)
-            };
-          case '96.5%':
-            return {
-              ...item,
-              bid: Number(item.bid) * (1 + Number(settings.gold965Bid) / 100),
-              ask: Number(item.ask) * (1 + Number(settings.gold965Ask) / 100)
             };
           case 'สมาคมฯ':
             return {
