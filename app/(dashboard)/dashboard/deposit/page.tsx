@@ -232,7 +232,7 @@ export default function DepositPage() {
                 <p>เงินสดในพอร์ต: ฿{balance.toLocaleString()}</p>
                 <p>วงเงินคงเหลือที่สามารถฝากได้: ฿{Math.max(0, remainingLimit).toLocaleString()}</p>
                 <p className="text-sm text-blue-500">
-                  <a href="http://m.me/4mangkorntong" target="_blank" rel="noopener noreferrer">
+                  <a href="https://lin.ee/EO0xuyG" target="_blank" rel="noopener noreferrer">
                     ติดต่อพนักงานเพื่อปลดลิมิต
                   </a>
                 </p>
