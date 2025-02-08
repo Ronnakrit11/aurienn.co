@@ -218,6 +218,14 @@ export const goldProducts = pgTable('gold_products', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+export const productSettings = pgTable('product_settings', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 100 }).notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  updatedBy: integer('updated_by').references(() => users.id),
+});
+
 // Relations
 export const teamsRelations = relations(teams, ({ many }) => ({
   teamMembers: many(teamMembers),
@@ -340,6 +348,13 @@ export const depositLimitsRelations = relations(depositLimits, ({ one }) => ({
   }),
 }));
 
+export const productSettingsRelations = relations(productSettings, ({ one }) => ({
+  updatedByUser: one(users, {
+    fields: [productSettings.updatedBy],
+    references: [users.id],
+  }),
+}));
+
 // Types
 export type User = InferSelectModel<typeof users>;
 export type NewUser = typeof users.$inferInsert;
@@ -375,6 +390,8 @@ export type GoldProduct = InferSelectModel<typeof goldProducts>;
 export type NewGoldProduct = typeof goldProducts.$inferInsert;
 export type DepositLimit = InferSelectModel<typeof depositLimits>;
 export type NewDepositLimit = typeof depositLimits.$inferInsert;
+export type ProductSetting = InferSelectModel<typeof productSettings>;
+export type NewProductSetting = typeof productSettings.$inferInsert;
 export type TeamDataWithMembers = Team & {
   teamMembers: (TeamMember & {
     user: Pick<User, 'id' | 'name' | 'email'>;
