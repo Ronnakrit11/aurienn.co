@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useUser } from '@/lib/auth';
 import { useTheme } from '@/lib/theme-provider';
 import { pusherClient } from '@/lib/pusher';
+import { Input } from '@/components/ui/input';
 
 interface GoldHolding {
   goldType: string;
@@ -50,6 +51,7 @@ const SavingsSummaryPage = () => {
   const { theme } = useTheme();
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   const isDark = theme === 'dark';
 
   const fetchData = async () => {
@@ -84,6 +86,36 @@ const SavingsSummaryPage = () => {
       };
     }
   }, [user]);
+
+  // Helper function to group user summaries by userId
+  const groupUserSummaries = (summaries: UserSummary[]) => {
+    return summaries.reduce((acc, summary) => {
+      const key = summary.userId;
+      if (!acc[key]) {
+        acc[key] = {
+          userId: summary.userId,
+          userName: summary.userName,
+          userEmail: summary.userEmail,
+          holdings: {}
+        };
+      }
+      acc[key].holdings[summary.goldType] = {
+        amount: summary.totalAmount,
+        value: summary.totalValue
+      };
+      return acc;
+    }, {} as Record<number, any>);
+  };
+
+  // Filter users based on search query
+  const filterUsers = (users: Record<number, any>) => {
+    return Object.values(users).filter(user => {
+      const searchTerm = searchQuery.toLowerCase();
+      const userName = (user.userName || '').toLowerCase();
+      const userEmail = user.userEmail.toLowerCase();
+      return userName.includes(searchTerm) || userEmail.includes(searchTerm);
+    });
+  };
 
   if (!user || user.role !== 'admin') {
     return (
@@ -190,33 +222,62 @@ const SavingsSummaryPage = () => {
       {/* User-specific Summaries */}
       <Card className={isDark ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <TrendingUp className="h-6 w-6 text-orange-500" />
-            <span className={isDark ? 'text-white' : ''}>สรุปรายบุคคล</span>
+          <CardTitle className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="h-6 w-6 text-orange-500" />
+              <span className={isDark ? 'text-white' : ''}>สรุปรายบุคคล</span>
+            </div>
+            <div className="w-64">
+              <Input
+                placeholder="ค้นหาชื่อลูกค้า..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className={`${isDark ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}`}
+              />
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-6">
-            {summaryData.userSummaries.map((summary) => (
+            {filterUsers(groupUserSummaries(summaryData.userSummaries)).map((user) => (
               <div
-                key={`${summary.userId}-${summary.goldType}`}
+                key={user.userId}
                 className={`p-4 border rounded-lg ${
                   isDark ? 'border-[#2A2A2A] bg-[#1a1a1a]' : 'border-gray-200'
                 }`}
               >
                 <h3 className={`text-lg font-medium mb-4 ${isDark ? 'text-white' : ''}`}>
-                  {summary.userName || summary.userEmail}
+                  {user.userName || user.userEmail}
                 </h3>
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  <div className={`p-3 rounded-lg ${isDark ? 'bg-[#252525]' : 'bg-gray-50'}`}>
-                    <p className={`font-medium mb-2 ${isDark ? 'text-white' : ''}`}>
-                      {summary.goldType}
-                    </p>
-                    <div className={`space-y-1 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                      <p>จำนวน: {Number(summary.totalAmount).toFixed(4)} บาท</p>
-                      <p>({calculateGrams(Number(summary.totalAmount), summary.goldType)} กรัม)</p>
-                      <p>มูลค่า: ฿{Number(summary.totalValue).toLocaleString()}</p>
-                    </div>
+                <div className={`p-4 rounded-lg ${isDark ? 'bg-[#252525]' : 'bg-gray-50'}`}>
+                  <div className="grid gap-6 md:grid-cols-2">
+                    {/* ทองสมาคม 96.5% */}
+                    {user.holdings['ทองสมาคม 96.5%'] && (
+                      <div>
+                        <p className={`font-medium mb-2 ${isDark ? 'text-white' : ''}`}>
+                          ทองสมาคม 96.5%
+                        </p>
+                        <div className={`space-y-1 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          <p>จำนวน: {Number(user.holdings['ทองสมาคม 96.5%'].amount).toFixed(4)} บาท</p>
+                          <p>({calculateGrams(Number(user.holdings['ทองสมาคม 96.5%'].amount), 'ทองสมาคม 96.5%')} กรัม)</p>
+                          <p>มูลค่า: ฿{Number(user.holdings['ทองสมาคม 96.5%'].value).toLocaleString()}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ทอง 99.99% */}
+                    {user.holdings['ทอง 99.99%'] && (
+                      <div>
+                        <p className={`font-medium mb-2 ${isDark ? 'text-white' : ''}`}>
+                          ทอง 99.99%
+                        </p>
+                        <div className={`space-y-1 text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                          <p>จำนวน: {Number(user.holdings['ทอง 99.99%'].amount).toFixed(4)} บาท</p>
+                          <p>({calculateGrams(Number(user.holdings['ทอง 99.99%'].amount), 'ทอง 99.99%')} กรัม)</p>
+                          <p>มูลค่า: ฿{Number(user.holdings['ทอง 99.99%'].value).toLocaleString()}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
