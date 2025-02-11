@@ -61,28 +61,28 @@ export default function GoldJewelryPage() {
         fetch('/api/management/catalog')
       ]);
 
-      if (productsResponse.ok && balanceResponse.ok && categoriesResponse.ok) {
-        const [productsData, balanceData, categoriesData] = await Promise.all([
-          productsResponse.json(),
-          balanceResponse.json(),
-          categoriesResponse.json()
-        ]);
-
-        // Filter for active products only
-        const activeProducts = productsData.filter((product: Product) => 
-          product.status === 'active'
-        );
-
-        setProducts(activeProducts);
-        setBalance(Number(balanceData.balance));
-        setCategories(categoriesData);
-        
-        // Set initial active tab if categories exist
-        if (categoriesData.length > 0) {
-          setActiveTab('all');
-        }
-      } else {
+      if (!productsResponse.ok || !balanceResponse.ok || !categoriesResponse.ok) {
         throw new Error('Failed to fetch data');
+      }
+
+      const [productsData, balanceData, categoriesData] = await Promise.all([
+        productsResponse.json(),
+        balanceResponse.json(),
+        categoriesResponse.json()
+      ]);
+
+      // Filter for active jewelry products (categoryId 1)
+      const activeProducts = productsData.filter((product: Product) => 
+        product.status === 'active'
+      );
+
+      setProducts(activeProducts);
+      setBalance(Number(balanceData.balance));
+      setCategories(categoriesData);
+      
+      // Set initial active tab if categories exist
+      if (categoriesData.length > 0) {
+        setActiveTab('all');
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -131,7 +131,6 @@ export default function GoldJewelryPage() {
       }
 
       const data = await response.json();
-      
       setBalance(Number(data.balance));
       setProducts(prevProducts => 
         prevProducts.filter(product => product.id !== selectedProduct.id)
@@ -186,18 +185,24 @@ export default function GoldJewelryPage() {
             </div>
           ) : products.length > 0 ? (
             <div className="space-y-6">
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="mb-4">
-                  <TabsTrigger value="all">ทั้งหมด</TabsTrigger>
-                  {categories.map((category) => (
-                    <TabsTrigger key={category.id} value={category.id.toString()}>
-                      {category.name}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <div className="overflow-x-auto">
+                  <TabsList className="mb-4 inline-flex min-w-full sm:min-w-0">
+                    <TabsTrigger value="all" className="px-4 py-2">ทั้งหมด</TabsTrigger>
+                    {categories.map((category) => (
+                      <TabsTrigger 
+                        key={category.id} 
+                        value={category.id.toString()}
+                        className="px-4 py-2"
+                      >
+                        {category.name}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </div>
 
                 <TabsContent value="all">
-                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
                     {getFilteredProducts('all').map((product) => (
                       <ProductCard 
                         key={product.id} 
@@ -212,7 +217,7 @@ export default function GoldJewelryPage() {
 
                 {categories.map((category) => (
                   <TabsContent key={category.id} value={category.id.toString()}>
-                    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
                       {getFilteredProducts(category.id.toString()).map((product) => (
                         <ProductCard 
                           key={product.id} 
@@ -236,7 +241,7 @@ export default function GoldJewelryPage() {
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className={isDark ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
+        <DialogContent className={`max-w-md w-full mx-auto ${isDark ? 'bg-[#151515] border-[#2A2A2A]' : ''}`}>
           <DialogHeader>
             <DialogTitle className={isDark ? 'text-white' : ''}>
               ยืนยันการซื้อสินค้า
@@ -245,6 +250,20 @@ export default function GoldJewelryPage() {
           {selectedProduct && (
             <div className="space-y-4">
               <div className={`p-4 rounded-lg ${isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
+                <div className="aspect-square relative mb-4 rounded-lg overflow-hidden">
+                  {selectedProduct.imageUrl ? (
+                    <Image
+                      src={selectedProduct.imageUrl}
+                      alt={selectedProduct.name}
+                      fill
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                      <ImagePlus className="h-12 w-12 text-gray-400" />
+                    </div>
+                  )}
+                </div>
                 <h3 className={`font-medium ${isDark ? 'text-white' : ''}`}>
                   {selectedProduct.name}
                 </h3>
@@ -278,9 +297,9 @@ export default function GoldJewelryPage() {
               </div>
 
               {calculateTotalPrice(selectedProduct) > balance && (
-                <div className={`p-4 rounded-lg bg-red-100 ${isDark ? 'bg-red-900/20' : ''}`}>
+                <div className={`p-4 rounded-lg ${isDark ? 'bg-red-900/20 border border-red-900' : 'bg-red-50 border border-red-200'}`}>
                   <div className="flex items-center">
-                    <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
+                    <AlertCircle className={`h-5 w-5 mr-2 ${isDark ? 'text-red-400' : 'text-red-500'}`} />
                     <p className={`text-sm ${isDark ? 'text-red-400' : 'text-red-600'}`}>
                       ยอดเงินในบัญชีไม่เพียงพอ กรุณาเติมเงินก่อนทำรายการ
                     </p>
@@ -324,10 +343,10 @@ function ProductCard({
 }) {
   return (
     <div
-      className={`border rounded-lg overflow-hidden ${
+      className={`flex flex-col h-full border rounded-lg overflow-hidden transform transition-transform hover:scale-[1.02] ${
         isDark 
-          ? 'bg-[#1a1a1a] border-[#2A2A2A] hover:bg-[#202020]' 
-          : 'hover:bg-gray-50'
+          ? 'bg-[#1a1a1a] border-[#2A2A2A]' 
+          : 'bg-white border-gray-200'
       }`}
     >
       <div className="aspect-square relative">
@@ -344,7 +363,7 @@ function ProductCard({
           </div>
         )}
       </div>
-      <div className="p-4">
+      <div className="p-4 flex flex-col flex-grow">
         <h3 className={`font-medium ${isDark ? 'text-white' : ''}`}>
           {product.name}
         </h3>
@@ -360,7 +379,7 @@ function ProductCard({
           <p>น้ำหนัก: {product.weight} {product.weightUnit}</p>
           <p>ความบริสุทธิ์: {product.purity}%</p>
         </div>
-        <div className="mt-4">
+        <div className="mt-auto pt-4">
           <div className="space-y-1">
             <div className="flex justify-between items-center">
               <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>ราคาสินค้า:</span>
