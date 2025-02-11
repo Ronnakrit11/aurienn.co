@@ -8,6 +8,7 @@ import { useTheme } from '@/lib/theme-provider';
 import Image from 'next/image';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface Product {
   id: number;
@@ -24,15 +25,23 @@ interface Product {
   status: string;
 }
 
+interface Category {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
 export default function GoldJewelryPage() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [balance, setBalance] = useState<number>(0);
+  const [activeTab, setActiveTab] = useState<string>('all');
 
   useEffect(() => {
     fetchData();
@@ -40,7 +49,7 @@ export default function GoldJewelryPage() {
 
   async function fetchData() {
     try {
-      const [productsResponse, balanceResponse] = await Promise.all([
+      const [productsResponse, balanceResponse, categoriesResponse] = await Promise.all([
         fetch('/api/management/products', {
           cache: 'no-store',
           headers: {
@@ -48,24 +57,30 @@ export default function GoldJewelryPage() {
             'Pragma': 'no-cache'
           }
         }),
-        fetch('/api/user/balance')
+        fetch('/api/user/balance'),
+        fetch('/api/management/catalog')
       ]);
 
-      if (productsResponse.ok && balanceResponse.ok) {
-        const [productsData, balanceData] = await Promise.all([
+      if (productsResponse.ok && balanceResponse.ok && categoriesResponse.ok) {
+        const [productsData, balanceData, categoriesData] = await Promise.all([
           productsResponse.json(),
-          balanceResponse.json()
+          balanceResponse.json(),
+          categoriesResponse.json()
         ]);
 
-        // Filter for active jewelry products (categoryId 1)
-        const jewelryProducts = productsData.filter((product: Product) => 
-          product.categoryId === 1 && 
+        // Filter for active products only
+        const activeProducts = productsData.filter((product: Product) => 
           product.status === 'active'
         );
 
-        console.log('Fetched products:', jewelryProducts); // Debug log
-        setProducts(jewelryProducts);
+        setProducts(activeProducts);
         setBalance(Number(balanceData.balance));
+        setCategories(categoriesData);
+        
+        // Set initial active tab if categories exist
+        if (categoriesData.length > 0) {
+          setActiveTab('all');
+        }
       } else {
         throw new Error('Failed to fetch data');
       }
@@ -117,10 +132,7 @@ export default function GoldJewelryPage() {
 
       const data = await response.json();
       
-      // Update balance
       setBalance(Number(data.balance));
-      
-      // Remove the purchased product from the list
       setProducts(prevProducts => 
         prevProducts.filter(product => product.id !== selectedProduct.id)
       );
@@ -129,7 +141,6 @@ export default function GoldJewelryPage() {
       setIsDialogOpen(false);
       setSelectedProduct(null);
       
-      // Refresh the products list
       fetchData();
     } catch (error) {
       console.error('Error processing purchase:', error);
@@ -137,6 +148,13 @@ export default function GoldJewelryPage() {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const getFilteredProducts = (categoryId: string) => {
+    if (categoryId === 'all') {
+      return products;
+    }
+    return products.filter(product => product.categoryId === Number(categoryId));
   };
 
   return (
@@ -167,74 +185,47 @@ export default function GoldJewelryPage() {
               <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
             </div>
           ) : products.length > 0 ? (
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {products.map((product) => (
-                <div
-                  key={product.id}
-                  className={`border rounded-lg overflow-hidden ${
-                    isDark 
-                      ? 'bg-[#1a1a1a] border-[#2A2A2A] hover:bg-[#202020]' 
-                      : 'hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="aspect-square relative">
-                    {product.imageUrl ? (
-                      <Image
-                        src={product.imageUrl}
-                        alt={product.name}
-                        fill
-                        className="object-cover"
+            <div className="space-y-6">
+              <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <TabsList className="mb-4">
+                  <TabsTrigger value="all">ทั้งหมด</TabsTrigger>
+                  {categories.map((category) => (
+                    <TabsTrigger key={category.id} value={category.id.toString()}>
+                      {category.name}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+
+                <TabsContent value="all">
+                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {getFilteredProducts('all').map((product) => (
+                      <ProductCard 
+                        key={product.id} 
+                        product={product} 
+                        isDark={isDark}
+                        onBuyClick={handleBuyClick}
+                        calculateTotalPrice={calculateTotalPrice}
                       />
-                    ) : (
-                      <div className="flex items-center justify-center h-full bg-gray-100">
-                        <ImagePlus className="h-12 w-12 text-gray-400" />
-                      </div>
-                    )}
+                    ))}
                   </div>
-                  <div className="p-4">
-                    <h3 className={`font-medium ${isDark ? 'text-white' : ''}`}>
-                      {product.name}
-                    </h3>
-                    <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                      รหัสสินค้า: {product.code}
-                    </p>
-                    {product.description && (
-                      <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {product.description}
-                      </p>
-                    )}
-                    <div className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                      <p>น้ำหนัก: {product.weight} {product.weightUnit}</p>
-                      <p>ความบริสุทธิ์: {product.purity}%</p>
+                </TabsContent>
+
+                {categories.map((category) => (
+                  <TabsContent key={category.id} value={category.id.toString()}>
+                    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                      {getFilteredProducts(category.id.toString()).map((product) => (
+                        <ProductCard 
+                          key={product.id} 
+                          product={product} 
+                          isDark={isDark}
+                          onBuyClick={handleBuyClick}
+                          calculateTotalPrice={calculateTotalPrice}
+                        />
+                      ))}
                     </div>
-                    <div className="mt-4">
-                      <div className="space-y-1">
-                        <div className="flex justify-between items-center">
-                          <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>ราคาสินค้า:</span>
-                          <span className="font-medium">฿{Number(product.sellingPrice).toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>ค่ากำเหน็จ:</span>
-                          <span className="font-medium">฿{Number(product.workmanshipFee).toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between items-center pt-2 border-t border-gray-200 dark:border-gray-700">
-                          <span className={`text-sm font-medium ${isDark ? 'text-white' : ''}`}>ราคารวม:</span>
-                          <span className="text-lg font-bold text-orange-500">
-                            ฿{calculateTotalPrice(product).toLocaleString()}
-                          </span>
-                        </div>
-                      </div>
-                      <Button 
-                        className="w-full mt-4 bg-orange-500 hover:bg-orange-600 text-white"
-                        onClick={() => handleBuyClick(product)}
-                      >
-                        <ShoppingBag className="h-4 w-4 mr-2" />
-                        ซื้อ
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  </TabsContent>
+                ))}
+              </Tabs>
             </div>
           ) : (
             <div className={`text-center py-8 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -316,5 +307,85 @@ export default function GoldJewelryPage() {
         </DialogContent>
       </Dialog>
     </section>
+  );
+}
+
+// Product Card Component
+function ProductCard({ 
+  product, 
+  isDark, 
+  onBuyClick,
+  calculateTotalPrice 
+}: { 
+  product: Product; 
+  isDark: boolean;
+  onBuyClick: (product: Product) => void;
+  calculateTotalPrice: (product: Product) => number;
+}) {
+  return (
+    <div
+      className={`border rounded-lg overflow-hidden ${
+        isDark 
+          ? 'bg-[#1a1a1a] border-[#2A2A2A] hover:bg-[#202020]' 
+          : 'hover:bg-gray-50'
+      }`}
+    >
+      <div className="aspect-square relative">
+        {product.imageUrl ? (
+          <Image
+            src={product.imageUrl}
+            alt={product.name}
+            fill
+            className="object-cover"
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full bg-gray-100">
+            <ImagePlus className="h-12 w-12 text-gray-400" />
+          </div>
+        )}
+      </div>
+      <div className="p-4">
+        <h3 className={`font-medium ${isDark ? 'text-white' : ''}`}>
+          {product.name}
+        </h3>
+        <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          รหัสสินค้า: {product.code}
+        </p>
+        {product.description && (
+          <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+            {product.description}
+          </p>
+        )}
+        <div className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          <p>น้ำหนัก: {product.weight} {product.weightUnit}</p>
+          <p>ความบริสุทธิ์: {product.purity}%</p>
+        </div>
+        <div className="mt-4">
+          <div className="space-y-1">
+            <div className="flex justify-between items-center">
+              <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>ราคาสินค้า:</span>
+              <span className="font-medium">฿{Number(product.sellingPrice).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>ค่ากำเหน็จ:</span>
+              <span className="font-medium">฿{Number(product.workmanshipFee).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between items-center pt-2 border-t border-gray-200 dark:border-gray-700">
+              <span className={`text-sm font-medium ${isDark ? 'text-white' : ''}`}>ราคารวม:</span>
+              <span className="text-lg font-bold text-orange-500">
+                ฿{calculateTotalPrice(product).toLocaleString()}
+              </span>
+            </div>
+          </div>
+          <Button 
+            className="w-full mt-4 bg-orange-500 hover:bg-orange-600 text-white"
+            onClick={() => onBuyClick(product)}
+          >
+            <ShoppingBag className="h-4 w-4 mr-2" />
+            ซื้อ
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -12,6 +12,24 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/chart/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'google.com',
+        port: '',
+        pathname: '/**'
+      },
+      {
+        protocol: 'https',
+        hostname: 'codexth.com',
+        port: '',
+        pathname: '/**'
+      },
+      {
+        protocol: 'http',
+        hostname: 'codexth.com',
+        port: '',
+        pathname: '/**'
+      }
     ],
   },
 };

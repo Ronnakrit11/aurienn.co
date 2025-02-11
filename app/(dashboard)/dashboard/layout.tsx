@@ -38,7 +38,7 @@ export default function DashboardLayout({
     
     const baseItems = [
       { href: '/dashboard/gold', icon: Coins, label: 'ซื้อขายทองออมทอง' },
-      { href: '/dashboard/goldj-ewelry', icon: Coins, label: 'ซื้อทองรูปพรรณ' },
+      { href: '/dashboard/gold-jewelry', icon: Coins, label: 'ซื้อทองรูปพรรณ' },
       
       { href: '/dashboard/asset', icon: BarChart2, label: 'สินทรัพย์ทั้งหมด' },
       { href: '/dashboard/transaction', icon: FileText, label: 'รายการซื้อขายทอง' },
