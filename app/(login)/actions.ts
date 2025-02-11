@@ -154,8 +154,11 @@ export const signUp = validatedAction(signUpSchema, async (data, formData): Prom
     phone,
     passwordHash,
     role: email === ADMIN_EMAIL ? 'owner' : 'member',
-    depositLimitId: defaultLimit?.id,
+    depositLimitId: defaultLimit?.id, // Set default deposit limit
   };
+
+ 
+
 
   const [createdUser] = await db.insert(users).values(newUser).returning();
 

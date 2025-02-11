@@ -217,36 +217,38 @@ export default function DepositPage() {
 
   return (
     <section className="flex-1 p-4 lg:p-8">
-      <Dialog open={showLimitDialog} onOpenChange={setShowLimitDialog}>
-        <DialogContent className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
-          <DialogHeader>
-            <DialogTitle className={theme === 'dark' ? 'text-white' : ''}>วงเงินการฝาก</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
-              <p className={`font-medium mb-2 ${theme === 'dark' ? 'text-white' : ''}`}>
-                ระดับวงเงิน: {depositLimit.name}
-              </p>
-              <div className={`space-y-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
-                <p>วงเงินลิมิต: ฿{Number(depositLimit.dailyLimit).toLocaleString()}</p>
-                <p>เงินสดในพอร์ต: ฿{balance.toLocaleString()}</p>
-                <p>วงเงินคงเหลือที่สามารถฝากได้: ฿{Math.max(0, remainingLimit).toLocaleString()}</p>
-                <p className="text-sm text-blue-500">
-                  <a href="https://lin.ee/EO0xuyG" target="_blank" rel="noopener noreferrer">
-                    ติดต่อพนักงานเพื่อปลดลิมิต
-                  </a>
-                </p>
-              </div>
-            </div>
-            <Button 
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-              onClick={() => setShowLimitDialog(false)}
-            >
-              ตกลง
-            </Button>
+  <Dialog open={showLimitDialog} onOpenChange={setShowLimitDialog}>
+    <DialogContent className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
+      <DialogHeader>
+        <DialogTitle className={theme === 'dark' ? 'text-white' : ''}>วงเงินการฝาก</DialogTitle>
+      </DialogHeader>
+      <div className="space-y-4">
+        <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
+          <p className={`font-medium mb-2 ${theme === 'dark' ? 'text-white' : ''}`}>
+            ระดับวงเงิน: {depositLimit?.name || 'Level 1'}
+          </p>
+          <div className={`space-y-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
+            <p>วงเงินลิมิต: ฿{Number(depositLimit?.dailyLimit || 50000).toLocaleString()}</p>
+            <p>เงินสดในพอร์ต: ฿{balance.toLocaleString()}</p>
+            <p>วงเงินคงเหลือที่สามารถฝากได้: ฿{Math.max(0, Number(depositLimit?.dailyLimit || 50000) - balance).toLocaleString()}</p>
+            <p className="text-sm text-blue-500">
+              <a href="https://lin.ee/EO0xuyG" target="_blank" rel="noopener noreferrer">
+                ติดต่อพนักงานเพื่อปลดลิมิต
+              </a>
+            </p>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+        <Button 
+          className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+          onClick={() => setShowLimitDialog(false)}
+        >
+          ตกลง
+        </Button>
+      </div>
+    </DialogContent>
+  </Dialog>
+
+
 
       <h1 className={`text-lg lg:text-2xl font-medium mb-6 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
         Deposit Funds
