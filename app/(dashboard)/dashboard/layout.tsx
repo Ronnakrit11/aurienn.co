@@ -37,7 +37,8 @@ export default function DashboardLayout({
     const isAdmin = user?.role === 'admin';
     
     const baseItems = [
-      { href: '/dashboard/gold', icon: Coins, label: 'ซื้อขายทอง' },
+      { href: '/dashboard/gold', icon: Coins, label: 'ซื้อขายทองออมทอง' },
+      { href: '/dashboard/goldj-ewelry', icon: Coins, label: 'ซื้อทองรูปพรรณ' },
       
       { href: '/dashboard/asset', icon: BarChart2, label: 'สินทรัพย์ทั้งหมด' },
       { href: '/dashboard/transaction', icon: FileText, label: 'รายการซื้อขายทอง' },
@@ -55,6 +56,9 @@ export default function DashboardLayout({
     const adminItems = [
       { href: '/dashboard/set-price', icon: Settings, label: 'กำหนดราคา' },
       { href: '/dashboard/products-settings', icon: Package, label: 'สถานะเทรดทอง' },
+      { href: '/dashboard/management/products', icon: Package, label: 'จัดการสินค้าทอง' }, 
+      { href: '/dashboard/management/catalog', icon: Package, label: 'จัดการแคตตาล็อกทอง' }, 
+
 
       { href: '/dashboard/customers', icon: UserCircle, label: 'ลูกค้าทั้งหมด' },
       { href: '/dashboard/deposit-limits', icon: BanknoteIcon, label: 'ตั้งค่าเพดานเงินฝาก' },
