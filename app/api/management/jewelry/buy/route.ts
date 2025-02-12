@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
-import { userBalances, transactions, goldProducts, goldAssets } from '@/lib/db/schema';
+import { userBalances, goldAssets, transactions, goldProducts } from '@/lib/db/schema';
 import { getUser } from '@/lib/db/queries';
 import { eq, sql } from 'drizzle-orm';
 
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
         throw new Error('Insufficient balance');
       }
 
-      // Get product details
+      // Get product details and check quantity
       const [product] = await tx
         .select()
         .from(goldProducts)
@@ -40,6 +40,10 @@ export async function POST(request: Request) {
 
       if (!product || product.status !== 'active') {
         throw new Error('Product not found or not available');
+      }
+
+      if (product.quantity < 1) {
+        throw new Error('Product out of stock');
       }
 
       // Update user balance
@@ -51,29 +55,29 @@ export async function POST(request: Request) {
         })
         .where(eq(userBalances.userId, user.id));
 
-      // Record transaction
+      // Create new gold asset record
+      await tx.insert(goldAssets).values({
+        userId: user.id,
+        goldType: name,
+        amount,
+        purchasePrice: (totalPrice / amount).toString(),
+      });
+
+      // Record buy transaction
       await tx.insert(transactions).values({
         userId: user.id,
         goldType: name,
-        amount: amount.toString(),
+        amount,
         pricePerUnit: (totalPrice / amount).toString(),
         totalPrice: totalPrice.toString(),
         type: 'buy',
       });
 
-      // Add to user's gold assets
-      await tx.insert(goldAssets).values({
-        userId: user.id,
-        goldType: name,
-        amount: amount.toString(),
-        purchasePrice: (totalPrice / amount).toString(),
-      });
-
-      // Update product status to inactive
+      // Update product quantity
       await tx
         .update(goldProducts)
         .set({
-          status: 'inactive',
+          quantity: sql`${goldProducts.quantity} - 1`,
           updatedAt: new Date(),
         })
         .where(eq(goldProducts.id, productId));
@@ -96,9 +100,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Error processing jewelry purchase:', error);
     return NextResponse.json(
-      { 
-        error: error instanceof Error ? error.message : 'Failed to process purchase'
-      },
+      { error: error instanceof Error ? error.message : 'Failed to process purchase' },
       { status: 500 }
     );
   }

@@ -20,6 +20,7 @@ export async function GET() {
         purity: goldProducts.purity,
         sellingPrice: goldProducts.sellingPrice,
         workmanshipFee: goldProducts.workmanshipFee,
+        quantity: goldProducts.quantity,
         imageUrl: goldProducts.imageUrl,
         status: goldProducts.status,
         createdAt: goldProducts.createdAt,

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Plus, Pencil, Trash2, ImagePlus, Loader2 } from 'lucide-react';
 import { useUser } from '@/lib/auth';
 import { redirect } from 'next/navigation';
@@ -28,6 +29,7 @@ interface Product {
   purity: string;
   sellingPrice: string;
   workmanshipFee: string;
+  quantity: string;
   imageUrl: string | null;
   status: string;
   createdAt: string;
@@ -44,6 +46,7 @@ export default function ProductsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('all');
   const [formData, setFormData] = useState({
     categoryId: '',
     name: '',
@@ -53,6 +56,7 @@ export default function ProductsPage() {
     purity: '',
     sellingPrice: '',
     workmanshipFee: '',
+    quantity: '0',
     imageUrl: '',
   });
 
@@ -103,6 +107,7 @@ export default function ProductsPage() {
         purity: String(product.purity),
         sellingPrice: String(product.sellingPrice),
         workmanshipFee: String(product.workmanshipFee),
+        quantity: String(product.quantity),
         imageUrl: product.imageUrl,
         status: product.status,
         createdAt: new Date(product.createdAt).toISOString(),
@@ -111,6 +116,11 @@ export default function ProductsPage() {
 
       setProducts(formattedProducts);
       setCategories(categoriesData);
+      
+      // Set initial active tab if categories exist
+      if (categoriesData.length > 0) {
+        setActiveTab('all');
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to fetch data');
@@ -160,10 +170,18 @@ export default function ProductsPage() {
       purity: '',
       sellingPrice: '',
       workmanshipFee: '',
+      quantity: '0',
       imageUrl: '',
     });
     setSelectedProduct(null);
   }
+
+  const getFilteredProducts = (categoryId: string) => {
+    if (categoryId === 'all') {
+      return products;
+    }
+    return products.filter(product => product.categoryId === Number(categoryId));
+  };
 
   return (
     <section className="flex-1 p-4 lg:p-8">
@@ -193,61 +211,33 @@ export default function ProductsPage() {
               <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
             </div>
           ) : products.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {products.map((product) => (
-                <div
-                  key={product.id}
-                  className={`border rounded-lg p-4 ${
-                    isDark 
-                      ? 'bg-[#1a1a1a] border-[#2A2A2A] hover:bg-[#202020]' 
-                      : 'hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="aspect-square relative mb-4 rounded-lg overflow-hidden bg-gray-100">
-                    {product.imageUrl ? (
-                      <Image
-                        src={product.imageUrl}
-                        alt={product.name}
-                        fill
-                        className="object-cover"
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-full">
-                        <ImagePlus className="h-12 w-12 text-gray-400" />
-                      </div>
-                    )}
-                  </div>
-                  <h3 className={`font-medium ${isDark ? 'text-white' : ''}`}>{product.name}</h3>
-                  <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                    Code: {product.code}
-                  </p>
-                  <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                    {product.weight} {product.weightUnit} | {product.purity}% purity
-                  </p>
-                  <div className="mt-2 space-y-1">
-                    <div className="flex justify-between">
-                      <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>ราคาสินค้า:</span>
-                      <span className="font-medium">฿{Number(product.sellingPrice).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>ค่ากำเหน็จ:</span>
-                      <span className="font-medium">฿{Number(product.workmanshipFee).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between pt-1 border-t border-gray-200 dark:border-gray-700">
-                      <span className={`text-sm font-medium ${isDark ? 'text-white' : ''}`}>ราคารวม:</span>
-                      <span className="font-bold text-orange-500">
-                        ฿{(Number(product.sellingPrice) + Number(product.workmanshipFee)).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 mt-4">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <div className="overflow-x-auto">
+                <TabsList className="mb-4 inline-flex min-w-full sm:min-w-0">
+                  <TabsTrigger value="all" className="px-4 py-2">All Products</TabsTrigger>
+                  {categories.map((category) => (
+                    <TabsTrigger 
+                      key={category.id} 
+                      value={category.id.toString()}
+                      className="px-4 py-2"
+                    >
+                      {category.name}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+
+              <TabsContent value="all">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {getFilteredProducts('all').map((product) => (
+                    <ProductCard 
+                      key={product.id}
+                      product={product}
+                      isDark={isDark}
+                      onEdit={() => {
                         setSelectedProduct(product);
                         setFormData({
-                          categoryId: product.categoryId?.toString() || '',
+                          categoryId: String(product.categoryId),
                           name: product.name,
                           description: product.description || '',
                           weight: product.weight,
@@ -255,30 +245,48 @@ export default function ProductsPage() {
                           purity: product.purity,
                           sellingPrice: product.sellingPrice,
                           workmanshipFee: product.workmanshipFee,
+                          quantity: product.quantity,
                           imageUrl: product.imageUrl || '',
                         });
                         setIsDialogOpen(true);
                       }}
-                      className={isDark ? 'border-[#2A2A2A] hover:bg-[#202020]' : ''}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDelete(product.id)}
-                      className={`text-red-500 ${
-                        isDark 
-                          ? 'border-[#2A2A2A] hover:bg-[#202020]' 
-                          : 'hover:bg-red-50'
-                      }`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                      onDelete={() => handleDelete(product.id)}
+                    />
+                  ))}
                 </div>
+              </TabsContent>
+
+              {categories.map((category) => (
+                <TabsContent key={category.id} value={category.id.toString()}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {getFilteredProducts(category.id.toString()).map((product) => (
+                      <ProductCard 
+                        key={product.id}
+                        product={product}
+                        isDark={isDark}
+                        onEdit={() => {
+                          setSelectedProduct(product);
+                          setFormData({
+                            categoryId: String(product.categoryId),
+                            name: product.name,
+                            description: product.description || '',
+                            weight: product.weight,
+                            weightUnit: product.weightUnit,
+                            purity: product.purity,
+                            sellingPrice: product.sellingPrice,
+                            workmanshipFee: product.workmanshipFee,
+                            quantity: product.quantity,
+                            imageUrl: product.imageUrl || '',
+                          });
+                          setIsDialogOpen(true);
+                        }}
+                        onDelete={() => handleDelete(product.id)}
+                      />
+                    ))}
+                  </div>
+                </TabsContent>
               ))}
-            </div>
+            </Tabs>
           ) : (
             <div className={`text-center py-8 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
               No products found. Click "Add Product" to create one.
@@ -361,7 +369,7 @@ export default function ProductsPage() {
                   <SelectTrigger className={isDark ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className={isDark ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}>
+                  <SelectContent className={isDark ? 'bg-[#1a1a1a] border-[#2A2A2A]' : ''}>
                     <SelectItem value="gram">Gram</SelectItem>
                     <SelectItem value="baht">Baht</SelectItem>
                   </SelectContent>
@@ -409,6 +417,19 @@ export default function ProductsPage() {
             </div>
 
             <div>
+              <Label htmlFor="quantity" className={isDark ? 'text-white' : ''}>Quantity</Label>
+              <Input
+                id="quantity"
+                type="number"
+                min="0"
+                value={formData.quantity}
+                onChange={(e) => setFormData(prev => ({ ...prev, quantity: e.target.value }))}
+                className={isDark ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}
+                required
+              />
+            </div>
+
+            <div>
               <Label htmlFor="imageUrl" className={isDark ? 'text-white' : ''}>Image URL</Label>
               <Input
                 id="imageUrl"
@@ -437,5 +458,97 @@ export default function ProductsPage() {
         </DialogContent>
       </Dialog>
     </section>
+  );
+}
+
+// Product Card Component
+function ProductCard({ 
+  product, 
+  isDark,
+  onEdit,
+  onDelete
+}: { 
+  product: Product;
+  isDark: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className={`border rounded-lg overflow-hidden ${isDark ? 'bg-[#1a1a1a] border-[#2A2A2A]' : ''}`}>
+      <div className="aspect-square relative">
+        {product.imageUrl ? (
+          <Image
+            src={product.imageUrl}
+            alt={product.name}
+            fill
+            className="object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gray-100">
+            <ImagePlus className="h-12 w-12 text-gray-400" />
+          </div>
+        )}
+      </div>
+      <div className="p-4">
+        <h3 className={`font-medium ${isDark ? 'text-white' : ''}`}>
+          {product.name}
+        </h3>
+        <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          Code: {product.code}
+        </p>
+        {product.description && (
+          <p className={`text-sm mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+            {product.description}
+          </p>
+        )}
+        <div className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          <p>Weight: {product.weight} {product.weightUnit}</p>
+          <p>Purity: {product.purity}%</p>
+          <p>Quantity: {product.quantity}</p>
+        </div>
+        <div className="mt-4">
+          <div className="space-y-1">
+            <div className="flex justify-between items-center">
+              <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Price:</span>
+              <span className="font-medium">฿{Number(product.sellingPrice).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Fee:</span>
+              <span className="font-medium">฿{Number(product.workmanshipFee).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between items-center pt-2 border-t border-gray-200 dark:border-gray-700">
+              <span className={`text-sm font-medium ${isDark ? 'text-white' : ''}`}>Total:</span>
+              <span className="text-lg font-bold text-orange-500">
+                ฿{(Number(product.sellingPrice) + Number(product.workmanshipFee)).toLocaleString()}
+              </span>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onEdit}
+              className={`flex-1 ${isDark ? 'border-[#2A2A2A] hover:bg-[#202020]' : ''}`}
+            >
+              <Pencil className="h-4 w-4 mr-2" />
+              Edit
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onDelete}
+              className={`flex-1 text-red-500 ${
+                isDark 
+                  ? 'border-[#2A2A2A] hover:bg-[#202020]' 
+                  : 'hover:bg-red-50'
+              }`}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

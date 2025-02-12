@@ -201,6 +201,7 @@ export const productCategories = pgTable('product_categories', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+// Update goldProducts table definition
 export const goldProducts = pgTable('gold_products', {
   id: serial('id').primaryKey(),
   categoryId: integer('category_id').references(() => productCategories.id),
@@ -212,6 +213,7 @@ export const goldProducts = pgTable('gold_products', {
   purity: decimal('purity').notNull(),
   sellingPrice: decimal('selling_price').notNull(),
   workmanshipFee: decimal('workmanship_fee').notNull(),
+  quantity: integer('quantity').notNull().default(0), // Add quantity field
   imageUrl: text('image_url'),
   status: varchar('status', { length: 20 }).notNull().default('active'),
   createdAt: timestamp('created_at').notNull().defaultNow(),

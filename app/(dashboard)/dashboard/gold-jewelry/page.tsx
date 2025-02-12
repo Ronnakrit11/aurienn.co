@@ -23,6 +23,7 @@ interface Product {
   workmanshipFee: string;
   imageUrl: string | null;
   status: string;
+  quantity: number;
 }
 
 interface Category {
@@ -111,6 +112,11 @@ export default function GoldJewelryPage() {
       return;
     }
 
+    if (selectedProduct.quantity < 1) {
+      toast.error('สินค้าหมด');
+      return;
+    }
+
     setIsProcessing(true);
     try {
       const response = await fetch('/api/management/jewelry/buy', {
@@ -127,23 +133,33 @@ export default function GoldJewelryPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to process purchase');
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to process purchase');
       }
 
       const data = await response.json();
+      
+      // Update balance
       setBalance(Number(data.balance));
+      
+      // Update product quantity locally
       setProducts(prevProducts => 
-        prevProducts.filter(product => product.id !== selectedProduct.id)
+        prevProducts.map(product => 
+          product.id === selectedProduct.id 
+            ? { ...product, quantity: product.quantity - 1 }
+            : product
+        )
       );
       
       toast.success('ซื้อสินค้าสำเร็จ');
       setIsDialogOpen(false);
       setSelectedProduct(null);
       
+      // Refresh the products list
       fetchData();
     } catch (error) {
       console.error('Error processing purchase:', error);
-      toast.error('เกิดข้อผิดพลาดในการซื้อสินค้า');
+      toast.error(error instanceof Error ? error.message : 'เกิดข้อผิดพลาดในการซื้อสินค้า');
     } finally {
       setIsProcessing(false);
     }
@@ -329,7 +345,6 @@ export default function GoldJewelryPage() {
   );
 }
 
-// Product Card Component
 function ProductCard({ 
   product, 
   isDark, 
@@ -362,6 +377,11 @@ function ProductCard({
             <ImagePlus className="h-12 w-12 text-gray-400" />
           </div>
         )}
+        {product.quantity <= 0 && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+            <span className="text-white font-bold text-lg">สินค้าหมด</span>
+          </div>
+        )}
       </div>
       <div className="p-4 flex flex-col flex-grow">
         <h3 className={`font-medium ${isDark ? 'text-white' : ''}`}>
@@ -378,6 +398,7 @@ function ProductCard({
         <div className={`text-sm mt-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
           <p>น้ำหนัก: {product.weight} {product.weightUnit}</p>
           <p>ความบริสุทธิ์: {product.purity}%</p>
+          <p>จำนวนคงเหลือ: {product.quantity} ชิ้น</p>
         </div>
         <div className="mt-auto pt-4">
           <div className="space-y-1">
@@ -399,9 +420,10 @@ function ProductCard({
           <Button 
             className="w-full mt-4 bg-orange-500 hover:bg-orange-600 text-white"
             onClick={() => onBuyClick(product)}
+            disabled={product.quantity < 1}
           >
             <ShoppingBag className="h-4 w-4 mr-2" />
-            ซื้อ
+            {product.quantity < 1 ? 'สินค้าหมด' : 'ซื้อ'}
           </Button>
         </div>
       </div>
