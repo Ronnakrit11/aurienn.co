@@ -13,7 +13,7 @@ export default function NotFound() {
         </h1>
         <p className="text-base text-gray-500">
           The page you are looking for might have been removed, had its name
-          changed, or is temporarily unavailable.
+          changed or is temporarily unavailable.
         </p>
         <Link
           href="/"
