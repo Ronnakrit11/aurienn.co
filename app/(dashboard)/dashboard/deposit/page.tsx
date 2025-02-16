@@ -185,8 +185,8 @@ export default function DepositPage() {
     {
       id: 'bank',
       name: 'Bank Transfer',
-      accountNumber: '131-8-09271-7',
-      accountName: 'นายรนกฤต เชียรวิชัย'
+      accountNumber: '182-8-51730-5',
+      accountName: 'บจก.เอ็กซ์เพิร์ท เอท โซลูชั่น จำกัด'
     }
   ];
 
