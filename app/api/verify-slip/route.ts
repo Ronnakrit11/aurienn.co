@@ -1,3 +1,5 @@
+
+
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
 import { verifiedSlips, userBalances, users, depositLimits } from '@/lib/db/schema';
@@ -10,10 +12,10 @@ const API_KEY = process.env.EASYSLIP_API_KEY;
 
 const EXPECTED_RECEIVER = {
   name: {
-    th: "นาย รนกฤต เ",
-    en: "MR. RONNAKRIT C"
+    th: "บจก. เอ็กซ์เพิร์ท เ",
+    en: "EXPERT 8"
   },
-  account: "XXX-X-XX271-7",
+  account: "XXX-X-XX730-5",
   type: "BANKAC"
 };
 
@@ -235,6 +237,7 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(bytes);
     const base64 = buffer.toString('base64');
 
+    // Call EasySlip API
     const response = await fetch(API_URL, {
       method: 'POST',
       headers: {
@@ -247,11 +250,22 @@ export async function POST(request: Request) {
       cache: 'no-store',
     });
 
+    if (!response.ok) {
+      console.error('EasySlip API error:', await response.text());
+      return NextResponse.json(
+        { status: 400, message: 'invalid_slip' },
+        { status: 400 }
+      );
+    }
+
     const data: EasySlipResponse = await response.json();
 
     // Handle different response statuses
-    if (!response.ok) {
-      return NextResponse.json(data, { status: response.status });
+    if (!data.data) {
+      return NextResponse.json(
+        { status: 400, message: 'invalid_slip', details: data.message },
+        { status: 400 }
+      );
     }
 
     // Validate receiver information
@@ -260,7 +274,7 @@ export async function POST(request: Request) {
         { 
           status: 400, 
           message: 'invalid_receiver',
-          details: 'Transfer must be to นายบรรณศาสตร์  account only'
+          details: 'Transfer must be to the correct account only'
         },
         { status: 400 }
       );

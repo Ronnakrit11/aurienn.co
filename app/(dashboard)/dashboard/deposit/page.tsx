@@ -31,6 +31,14 @@ interface DepositLimit {
   dailyLimit: string;
 }
 
+const BANK_NAMES: { [key: string]: string } = {
+  'ktb': 'ธนาคารกรุงไทย',
+  'kbank': 'ธนาคารกสิกรไทย',
+  'scb': 'ธนาคารไทยพาณิชย์',
+  'gsb': 'ธนาคารออมสิน',
+  'kkp': 'ธนาคารเกียรตินาคินภัทร'
+};
+
 export default function DepositPage() {
   const { user } = useUser();
   const { theme } = useTheme();
@@ -44,10 +52,15 @@ export default function DepositPage() {
   const [depositLimit, setDepositLimit] = useState<DepositLimit | null>(null);
   const [showLimitDialog, setShowLimitDialog] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [todayDeposits, setTodayDeposits] = useState(0);
 
   useEffect(() => {
     async function fetchData() {
       try {
+        // Get today's date at midnight
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
         const [depositsResponse, balanceResponse, limitResponse] = await Promise.all([
           fetch('/api/deposits/recent'),
           fetch('/api/user/balance'),
@@ -61,9 +74,15 @@ export default function DepositPage() {
             limitResponse.json()
           ]);
 
+          // Calculate today's deposits
+          const todayTotal = depositsData
+            .filter((deposit: VerifiedSlip) => new Date(deposit.verifiedAt) >= today)
+            .reduce((sum: number, deposit: VerifiedSlip) => sum + Number(deposit.amount), 0);
+
           setRecentDeposits(depositsData);
           setBalance(Number(balanceData.balance));
           setDepositLimit(limitData);
+          setTodayDeposits(todayTotal);
         }
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -91,9 +110,9 @@ export default function DepositPage() {
   
     if (depositLimit) {
       const dailyLimit = Number(depositLimit.dailyLimit);
-      const remainingLimit = dailyLimit - balance;
+      const remainingDailyLimit = dailyLimit - todayDeposits;
 
-      if (amountNum > remainingLimit) {
+      if (amountNum > remainingDailyLimit) {
         toast.error('ไม่สามารถเพิ่มเงินได้ เนื่องจากเกินวงเงินที่กำหนด');
         return;
       }
@@ -141,6 +160,14 @@ export default function DepositPage() {
         if (recentResponse.ok) {
           const recentData = await recentResponse.json();
           setRecentDeposits(recentData);
+          
+          // Update today's deposits
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const todayTotal = recentData
+            .filter((deposit: VerifiedSlip) => new Date(deposit.verifiedAt) >= today)
+            .reduce((sum: number, deposit: VerifiedSlip) => sum + Number(deposit.amount), 0);
+          setTodayDeposits(todayTotal);
         }
 
         if (balanceResponse.ok) {
@@ -198,11 +225,10 @@ export default function DepositPage() {
     });
   }
 
-  // Calculate remaining deposit limit and validation states
-  const remainingLimit = depositLimit ? Number(depositLimit.dailyLimit) - balance : 0;
-  const amountNum = Number(amount);
-  const canDeposit = Boolean(depositLimit && (!amount || (amountNum > 0 && amountNum <= remainingLimit)));
-  const showLimitError = Boolean(amount && amountNum > 0 && !canDeposit);
+  // Calculate remaining deposit limit
+  const remainingDailyLimit = depositLimit ? Number(depositLimit.dailyLimit) - todayDeposits : 0;
+  const canDeposit = Boolean(depositLimit && (!amount || (Number(amount) > 0 && Number(amount) <= remainingDailyLimit)));
+  const showLimitError = Boolean(amount && Number(amount) > 0 && !canDeposit);
 
   if (!depositLimit) {
     return (
@@ -217,38 +243,36 @@ export default function DepositPage() {
 
   return (
     <section className="flex-1 p-4 lg:p-8">
-  <Dialog open={showLimitDialog} onOpenChange={setShowLimitDialog}>
-    <DialogContent className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
-      <DialogHeader>
-        <DialogTitle className={theme === 'dark' ? 'text-white' : ''}>วงเงินการฝาก</DialogTitle>
-      </DialogHeader>
-      <div className="space-y-4">
-        <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
-          <p className={`font-medium mb-2 ${theme === 'dark' ? 'text-white' : ''}`}>
-            ระดับวงเงิน: {depositLimit?.name || 'Level 1'}
-          </p>
-          <div className={`space-y-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
-            <p>วงเงินลิมิต: ฿{Number(depositLimit?.dailyLimit || 50000).toLocaleString()}</p>
-            <p>เงินสดในพอร์ต: ฿{balance.toLocaleString()}</p>
-            <p>วงเงินคงเหลือที่สามารถฝากได้: ฿{Math.max(0, Number(depositLimit?.dailyLimit || 50000) - balance).toLocaleString()}</p>
-            <p className="text-sm text-blue-500">
-              <a href="https://lin.ee/EO0xuyG" target="_blank" rel="noopener noreferrer">
-                ติดต่อพนักงานเพื่อปลดลิมิต
-              </a>
-            </p>
+      <Dialog open={showLimitDialog} onOpenChange={setShowLimitDialog}>
+        <DialogContent className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
+          <DialogHeader>
+            <DialogTitle className={theme === 'dark' ? 'text-white' : ''}>วงเงินการฝาก</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
+              <p className={`font-medium mb-2 ${theme === 'dark' ? 'text-white' : ''}`}>
+                ระดับวงเงิน: {depositLimit?.name || 'Level 1'}
+              </p>
+              <div className={`space-y-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
+                <p>วงเงินลิมิต: ฿{Number(depositLimit?.dailyLimit || 50000).toLocaleString()}</p>
+                <p>ยอดฝากวันนี้: ฿{todayDeposits.toLocaleString()}</p>
+                <p>วงเงินคงเหลือที่สามารถฝากได้: ฿{remainingDailyLimit.toLocaleString()}</p>
+                <p className="text-sm text-blue-500">
+                  <a href="https://lin.ee/EO0xuyG" target="_blank" rel="noopener noreferrer">
+                    ติดต่อพนักงานเพื่อปลดลิมิต
+                  </a>
+                </p>
+              </div>
+            </div>
+            <Button 
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+              onClick={() => setShowLimitDialog(false)}
+            >
+              ตกลง
+            </Button>
           </div>
-        </div>
-        <Button 
-          className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-          onClick={() => setShowLimitDialog(false)}
-        >
-          ตกลง
-        </Button>
-      </div>
-    </DialogContent>
-  </Dialog>
-
-
+        </DialogContent>
+      </Dialog>
 
       <h1 className={`text-lg lg:text-2xl font-medium mb-6 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
         Deposit Funds
@@ -279,8 +303,8 @@ export default function DepositPage() {
                 />
                 {depositLimit && (
                   <div className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                    <p>เงินสดในพอร์ต: ฿{balance.toLocaleString()}</p>
-                    <p>วงเงินคงเหลือที่เติมได้: ฿{Math.max(0, remainingLimit).toLocaleString()}</p>
+                    <p>ยอดฝากวันนี้: ฿{todayDeposits.toLocaleString()}</p>
+                    <p>วงเงินคงเหลือที่ฝากได้: ฿{remainingDailyLimit.toLocaleString()}</p>
                   </div>
                 )}
                 {showLimitError && (
