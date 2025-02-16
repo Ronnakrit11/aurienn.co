@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Wallet, Loader2, Upload, Copy, Check } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Wallet, Loader2, Upload, Copy, Check, CreditCard } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useUser } from '@/lib/auth';
@@ -53,6 +54,8 @@ export default function DepositPage() {
   const [showLimitDialog, setShowLimitDialog] = useState(true);
   const [copied, setCopied] = useState(false);
   const [todayDeposits, setTodayDeposits] = useState(0);
+  const [activeTab, setActiveTab] = useState('bank');
+  const [isPaymentProcessing, setIsPaymentProcessing] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -186,6 +189,59 @@ export default function DepositPage() {
     }
   };
 
+  const handlePaySolutionsDeposit = async () => {
+    if (!amount) {
+      toast.error('กรุณากรอกจำนวนเงิน');
+      return;
+    }
+
+    const amountNum = Number(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      toast.error('กรุณากรอกจำนวนเงินที่ถูกต้อง');
+      return;
+    }
+
+    if (depositLimit) {
+      const dailyLimit = Number(depositLimit.dailyLimit);
+      const remainingDailyLimit = dailyLimit - todayDeposits;
+
+      if (amountNum > remainingDailyLimit) {
+        toast.error('ไม่สามารถเพิ่มเงินได้ เนื่องจากเกินวงเงินที่กำหนด');
+        return;
+      }
+    }
+
+    setIsPaymentProcessing(true);
+
+    try {
+      const response = await fetch('/api/paysolutions/create-payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amount: amountNum }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create payment');
+      }
+
+      const data = await response.json();
+      
+      // Redirect to PaySolutions payment page
+      if (data.webPaymentUrl) {
+        window.location.href = data.webPaymentUrl;
+      } else {
+        throw new Error('No payment URL received');
+      }
+    } catch (error) {
+      console.error('Error creating payment:', error);
+      toast.error('ไม่สามารถสร้างรายการชำระเงินได้');
+    } finally {
+      setIsPaymentProcessing(false);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -287,138 +343,227 @@ export default function DepositPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleDeposit} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="amount" className={theme === 'dark' ? 'text-white' : ''}>Amount (THB)</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="Enter amount"
-                  required
-                  min="0"
-                  step="0.01"
-                  className={`text-lg ${theme === 'dark' ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}`}
-                />
-                {depositLimit && (
-                  <div className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                    <p>ยอดฝากวันนี้: ฿{todayDeposits.toLocaleString()}</p>
-                    <p>วงเงินคงเหลือที่ฝากได้: ฿{remainingDailyLimit.toLocaleString()}</p>
-                  </div>
-                )}
-                {showLimitError && (
-                  <p className="text-sm text-red-500">
-                    ไม่สามารถเพิ่มเงินได้ เนื่องจากเกินวงเงินที่กำหนด
-                  </p>
-                )}
-              </div>
+            <Tabs defaultValue="bank" value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="grid w-full grid-cols-2 mb-4">
+                <TabsTrigger value="bank">Bank Transfer</TabsTrigger>
+                <TabsTrigger value="paysolutions">Credit Card / QR</TabsTrigger>
+              </TabsList>
 
-              <div className="space-y-2">
-                <Label className={theme === 'dark' ? 'text-white' : ''}>Select Payment Method</Label>
-                <div className="grid gap-4">
-                  {paymentMethods.map((method) => (
-                    <Button
-                      key={method.id}
-                      type="button"
-                      variant={selectedMethod === method.id ? 'default' : 'outline'}
-                      className={`w-full justify-start space-x-2 h-auto py-4 ${
-                        selectedMethod === method.id 
-                          ? 'bg-orange-500 text-white hover:bg-orange-600' 
-                          : theme === 'dark' 
+              <TabsContent value="bank">
+                <form onSubmit={handleDeposit} className="space-y-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="amount" className={theme === 'dark' ? 'text-white' : ''}>Amount (THB)</Label>
+                    <Input
+                      id="amount"
+                      type="number"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="Enter amount"
+                      required
+                      min="0"
+                      step="0.01"
+                      className={`text-lg ${theme === 'dark' ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}`}
+                    />
+                    {depositLimit && (
+                      <div className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <p>ยอดฝากวันนี้: ฿{todayDeposits.toLocaleString()}</p>
+                        <p>วงเงินคงเหลือที่ฝากได้: ฿{remainingDailyLimit.toLocaleString()}</p>
+                      </div>
+                    )}
+                    {showLimitError && (
+                      <p className="text-sm text-red-500">
+                        ไม่สามารถเพิ่มเงินได้ เนื่องจากเกินวงเงินที่กำหนด
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className={theme === 'dark' ? 'text-white' : ''}>Select Payment Method</Label>
+                    <div className="grid gap-4">
+                      {paymentMethods.map((method) => (
+                        <Button
+                          key={method.id}
+                          type="button"
+                          variant={selectedMethod === method.id ? 'default' : 'outline'}
+                          className={`w-full justify-start space-x-2 h-auto py-4 ${
+                            selectedMethod === method.id 
+                              ? 'bg-orange-500 text-white hover:bg-orange-600' 
+                              : theme === 'dark' 
+                                ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white hover:bg-[#202020]'
+                                : ''
+                          }`}
+                          onClick={() => setSelectedMethod(method.id)}
+                          disabled={Boolean(showLimitError)}
+                        >
+                          <div className="flex items-center space-x-4 w-full">
+                            <Image 
+                              src="/kbank-logo.jpg" 
+                              alt="Kbank Logo" 
+                              width={70} 
+                              height={60}
+                              className="rounded-md"
+                            />
+                            <div className="flex flex-col items-start flex-grow">
+                              <span>{method.name}</span>
+                              <div className="flex items-center justify-between w-full mt-1">
+                                <div>
+                                  <p className="text-sm opacity-75">Bank: {method.accountNumber}</p>
+                                  <p className="text-sm opacity-75">{method.accountName}</p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className={`ml-2 ${theme === 'dark' ? 'hover:bg-[#252525]' : ''}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopyAccountNumber();
+                                  }}
+                                >
+                                  {copied ? (
+                                    <Check className="h-4 w-4 text-green-500" />
+                                  ) : (
+                                    <Copy className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="slip" className={theme === 'dark' ? 'text-white' : ''}>Upload Transfer Slip</Label>
+                    <div className="flex items-center gap-4">
+                      <Input
+                        id="slip"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileChange}
+                        required
+                        className="hidden"
+                        disabled={Boolean(showLimitError)}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className={`w-full h-24 flex flex-col items-center justify-center border-dashed ${
+                          theme === 'dark' 
                             ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white hover:bg-[#202020]'
                             : ''
-                      }`}
-                      onClick={() => setSelectedMethod(method.id)}
-                      disabled={Boolean(showLimitError)}
-                    >
-                      <div className="flex items-center space-x-4 w-full">
-                        <Image 
-                          src="/kbank-logo.jpg" 
-                          alt="Kbank Logo" 
-                          width={70} 
-                          height={60}
-                          className="rounded-md"
-                        />
-                        <div className="flex flex-col items-start flex-grow">
-                          <span>{method.name}</span>
-                          <div className="flex items-center justify-between w-full mt-1">
-                            <div>
-                              <p className="text-sm opacity-75">Bank: {method.accountNumber}</p>
-                              <p className="text-sm opacity-75">{method.accountName}</p>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className={`ml-2 ${theme === 'dark' ? 'hover:bg-[#252525]' : ''}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCopyAccountNumber();
-                              }}
-                            >
-                              {copied ? (
-                                <Check className="h-4 w-4 text-green-500" />
-                              ) : (
-                                <Copy className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </Button>
-                  ))}
-                </div>
-              </div>
+                        }`}
+                        onClick={() => document.getElementById('slip')?.click()}
+                        disabled={Boolean(showLimitError)}
+                      >
+                        <Upload className="h-6 w-6 mb-2" />
+                        {selectedFile ? (
+                          <span className="text-sm">{selectedFile.name}</span>
+                        ) : (
+                          <span className="text-sm">Click to upload slip</span>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="slip" className={theme === 'dark' ? 'text-white' : ''}>Upload Transfer Slip</Label>
-                <div className="flex items-center gap-4">
-                  <Input
-                    id="slip"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    required
-                    className="hidden"
-                    disabled={Boolean(showLimitError)}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className={`w-full h-24 flex flex-col items-center justify-center border-dashed ${
-                      theme === 'dark' 
-                        ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white hover:bg-[#202020]'
-                        : ''
-                    }`}
-                    onClick={() => document.getElementById('slip')?.click()}
-                    disabled={Boolean(showLimitError)}
+                  <Button 
+                    type="submit" 
+                    className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+                    disabled={Boolean(!amount || !selectedMethod || !selectedFile || isVerifying || isProcessing || !canDeposit)}
                   >
-                    <Upload className="h-6 w-6 mb-2" />
-                    {selectedFile ? (
-                      <span className="text-sm">{selectedFile.name}</span>
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Processing...
+                      </>
                     ) : (
-                      <span className="text-sm">Click to upload slip</span>
+                      'Proceed with Deposit'
+                    )}
+                  </Button>
+                </form>
+              </TabsContent>
+
+              <TabsContent value="paysolutions">
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="cc-amount" className={theme === 'dark' ? 'text-white' : ''}>Amount (THB)</Label>
+                    <Input
+                      id="cc-amount"
+                      type="number"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="Enter amount"
+                      required
+                      min="0"
+                      step="0.01"
+                      className={`text-lg ${theme === 'dark' ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}`}
+                    />
+                    {depositLimit && (
+                      <div className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <p>ยอดฝากวันนี้: ฿{todayDeposits.toLocaleString()}</p>
+                        <p>วงเงินคงเหลือที่ฝากได้: ฿{remainingDailyLimit.toLocaleString()}</p>
+                      </div>
+                    )}
+                    {showLimitError && (
+                      <p className="text-sm text-red-500">
+                        ไม่สามารถเพิ่มเงินได้ เนื่องจากเกินวงเงินที่กำหนด
+                      </p>
+                    )}
+                  </div>
+
+                  <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
+                    <div className="flex items-center space-x-3 mb-4">
+                      <CreditCard className="h-6 w-6 text-orange-500" />
+                      <h3 className={`font-medium ${theme === 'dark' ? 'text-white' : ''}`}>
+                        Payment Methods Available
+                      </h3>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className={`p-3 rounded-lg text-center ${theme === 'dark' ? 'bg-[#252525]' : 'bg-white'}`}>
+                        <CreditCard className="h-8 w-8 mx-auto mb-2 text-blue-500" />
+                        <p className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>Credit Card</p>
+                      </div>
+                      <div className={`p-3 rounded-lg text-center ${theme === 'dark' ? 'bg-[#252525]' : 'bg-white'}`}>
+                        <Image
+                          src="/promptpay-logo.png"
+                          alt="PromptPay"
+                          width={32}
+                          height={32}
+                          className="mx-auto mb-2"
+                        />
+                        <p className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>PromptPay</p>
+                      </div>
+                      <div className={`p-3 rounded-lg text-center ${theme === 'dark' ? 'bg-[#252525]' : 'bg-white'}`}>
+                        <Image
+                          src="/qr-code.png"
+                          alt="QR Code"
+                          width={32}
+                          height={32}
+                          className="mx-auto mb-2"
+                        />
+                        <p className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>QR Code</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button 
+                    onClick={handlePaySolutionsDeposit}
+                    className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+                    disabled={!amount || Number(amount) <= 0 || isPaymentProcessing || !canDeposit}
+                  >
+                    {isPaymentProcessing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      'Proceed to Payment'
                     )}
                   </Button>
                 </div>
-              </div>
-
-              <Button 
-                type="submit" 
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-                disabled={Boolean(!amount || !selectedMethod || !selectedFile || isVerifying || isProcessing || !canDeposit)}
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  'Proceed with Deposit'
-                )}
-              </Button>
-            </form>
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
 
