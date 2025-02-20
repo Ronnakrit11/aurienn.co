@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Wallet, Loader2, Upload, Copy, Check } from 'lucide-react';
+import { Wallet, Loader2, Upload, Copy, Check, CreditCard } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useUser } from '@/lib/auth';
@@ -97,7 +97,7 @@ export default function DepositPage() {
   const handleDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!selectedFile || !amount) {
+    if (selectedMethod === 'bank' && (!selectedFile || !amount)) {
       toast.error('กรุณากรอกข้อมูลให้ครบถ้วน');
       return;
     }
@@ -118,71 +118,92 @@ export default function DepositPage() {
       }
     }
 
-    setIsVerifying(true);
     setIsProcessing(true);
 
     try {
-      const formData = new FormData();
-      formData.append('slip', selectedFile);
-      formData.append('amount', amount);
+      if (selectedMethod === 'bank') {
+        // Handle bank transfer
+        const formData = new FormData();
+        formData.append('slip', selectedFile!);
+        formData.append('amount', amount);
 
-      const response = await fetch('/api/verify-slip', {
-        method: 'POST',
-        body: formData,
-      });
+        const response = await fetch('/api/verify-slip', {
+          method: 'POST',
+          body: formData,
+        });
 
-      const data = await response.json();
+        const data = await response.json();
 
-      if (!response.ok) {
-        if (data.message === 'slip_already_used') {
-          toast.error('สลิปถูกใช้ไปแล้ว');
-          return;
+        if (!response.ok) {
+          if (data.message === 'slip_already_used') {
+            toast.error('สลิปถูกใช้ไปแล้ว');
+            return;
+          }
+          if (data.message === 'deposit_limit_exceeded') {
+            toast.error(data.details);
+            return;
+          }
+          throw new Error(data.message || 'Failed to verify slip');
         }
-        if (data.message === 'deposit_limit_exceeded') {
-          toast.error(data.details);
-          return;
-        }
-        throw new Error(data.message || 'Failed to verify slip');
-      }
 
-      if (data.status === 200) {
-        toast.success('ยืนยันสลิปสำเร็จ');
-        setAmount('');
-        setSelectedMethod(null);
-        setSelectedFile(null);
-        
-        // Refresh data
-        const [recentResponse, balanceResponse] = await Promise.all([
-          fetch('/api/deposits/recent'),
-          fetch('/api/user/balance')
-        ]);
-
-        if (recentResponse.ok) {
-          const recentData = await recentResponse.json();
-          setRecentDeposits(recentData);
+        if (data.status === 200) {
+          toast.success('ยืนยันสลิปสำเร็จ');
+          setAmount('');
+          setSelectedMethod(null);
+          setSelectedFile(null);
           
-          // Update today's deposits
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const todayTotal = recentData
-            .filter((deposit: VerifiedSlip) => new Date(deposit.verifiedAt) >= today)
-            .reduce((sum: number, deposit: VerifiedSlip) => sum + Number(deposit.amount), 0);
-          setTodayDeposits(todayTotal);
+          // Refresh data
+          const [recentResponse, balanceResponse] = await Promise.all([
+            fetch('/api/deposits/recent'),
+            fetch('/api/user/balance')
+          ]);
+
+          if (recentResponse.ok) {
+            const recentData = await recentResponse.json();
+            setRecentDeposits(recentData);
+            
+            // Update today's deposits
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const todayTotal = recentData
+              .filter((deposit: VerifiedSlip) => new Date(deposit.verifiedAt) >= today)
+              .reduce((sum: number, deposit: VerifiedSlip) => sum + Number(deposit.amount), 0);
+            setTodayDeposits(todayTotal);
+          }
+
+          if (balanceResponse.ok) {
+            const balanceData = await balanceResponse.json();
+            setBalance(Number(balanceData.balance));
+          }
+        } else {
+          toast.error(data.message || 'สลิปไม่ถูกต้อง');
+        }
+      } else if (selectedMethod === 'card') {
+        // Handle credit/debit card payment through PaySolutions
+        const response = await fetch('/api/paysolutions/create-payment', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ amount: amountNum }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to create payment');
         }
 
-        if (balanceResponse.ok) {
-          const balanceData = await balanceResponse.json();
-          setBalance(Number(balanceData.balance));
-        }
-      } else {
-        toast.error(data.message || 'สลิปไม่ถูกต้อง');
+        // Redirect to PaySolutions payment page
+        window.location.href = data.webPaymentUrl;
+        return;
       }
     } catch (error) {
       console.error('Error processing deposit:', error);
-      toast.error('ไม่สามารถตรวจสอบสลิปได้');
+      toast.error('ไม่สามารถดำเนินการได้');
     } finally {
-      setIsVerifying(false);
       setIsProcessing(false);
+      setIsVerifying(false);
     }
   };
 
@@ -214,6 +235,11 @@ export default function DepositPage() {
       name: 'Bank Transfer',
       accountNumber: '182-8-51730-5',
       accountName: 'บจก.เอ็กซ์เพิร์ท เอท โซลูชั่น จำกัด'
+    },
+    {
+      id: 'card',
+      name: 'Credit/Debit Card',
+      description: 'Visa, Mastercard, JCB'
     }
   ];
 
@@ -333,37 +359,47 @@ export default function DepositPage() {
                       disabled={Boolean(showLimitError)}
                     >
                       <div className="flex items-center space-x-4 w-full">
-                        <Image 
-                          src="/kbank-logo.jpg" 
-                          alt="Kbank Logo" 
-                          width={70} 
-                          height={60}
-                          className="rounded-md"
-                        />
+                        {method.id === 'bank' ? (
+                          <Image 
+                            src="/kbank-logo.jpg" 
+                            alt="Bank Logo" 
+                            width={70} 
+                            height={60}
+                            className="rounded-md"
+                          />
+                        ) : (
+                          <div className={`p-4 ${theme === 'dark' ? 'bg-[#202020]' : 'bg-gray-100'} rounded-md`}>
+                            <CreditCard className="h-8 w-8 text-orange-500" />
+                          </div>
+                        )}
                         <div className="flex flex-col items-start flex-grow">
                           <span>{method.name}</span>
-                          <div className="flex items-center justify-between w-full mt-1">
-                            <div>
-                              <p className="text-sm opacity-75">Bank: {method.accountNumber}</p>
-                              <p className="text-sm opacity-75">{method.accountName}</p>
+                          {method.id === 'bank' ? (
+                            <div className="flex items-center justify-between w-full mt-1">
+                              <div>
+                                <p className="text-sm opacity-75">Bank: {method.accountNumber}</p>
+                                <p className="text-sm opacity-75">{method.accountName}</p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className={`ml-2 ${theme === 'dark' ? 'hover:bg-[#252525]' : ''}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopyAccountNumber();
+                                }}
+                              >
+                                {copied ? (
+                                  <Check className="h-4 w-4 text-green-500" />
+                                ) : (
+                                  <Copy className="h-4 w-4" />
+                                )}
+                              </Button>
                             </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className={`ml-2 ${theme === 'dark' ? 'hover:bg-[#252525]' : ''}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCopyAccountNumber();
-                              }}
-                            >
-                              {copied ? (
-                                <Check className="h-4 w-4 text-green-500" />
-                              ) : (
-                                <Copy className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
+                          ) : (
+                            <p className="text-sm opacity-75">{method.description}</p>
+                          )}
                         </div>
                       </div>
                     </Button>
@@ -371,43 +407,52 @@ export default function DepositPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="slip" className={theme === 'dark' ? 'text-white' : ''}>Upload Transfer Slip</Label>
-                <div className="flex items-center gap-4">
-                  <Input
-                    id="slip"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    required
-                    className="hidden"
-                    disabled={Boolean(showLimitError)}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className={`w-full h-24 flex flex-col items-center justify-center border-dashed ${
-                      theme === 'dark' 
-                        ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white hover:bg-[#202020]'
-                        : ''
-                    }`}
-                    onClick={() => document.getElementById('slip')?.click()}
-                    disabled={Boolean(showLimitError)}
-                  >
-                    <Upload className="h-6 w-6 mb-2" />
-                    {selectedFile ? (
-                      <span className="text-sm">{selectedFile.name}</span>
-                    ) : (
-                      <span className="text-sm">Click to upload slip</span>
-                    )}
-                  </Button>
+              {selectedMethod === 'bank' && (
+                <div className="space-y-2">
+                  <Label htmlFor="slip" className={theme === 'dark' ? 'text-white' : ''}>Upload Transfer Slip</Label>
+                  <div className="flex items-center gap-4">
+                    <Input
+                      id="slip"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      required
+                      className="hidden"
+                      disabled={Boolean(showLimitError)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={`w-full h-24 flex flex-col items-center justify-center border-dashed ${
+                        theme === 'dark' 
+                          ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white hover:bg-[#202020]'
+                          : ''
+                      }`}
+                      onClick={() => document.getElementById('slip')?.click()}
+                      disabled={Boolean(showLimitError)}
+                    >
+                      <Upload className="h-6 w-6 mb-2" />
+                      {selectedFile ? (
+                        <span className="text-sm">{selectedFile.name}</span>
+                      ) : (
+                        <span className="text-sm">Click to upload slip</span>
+                      )}
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <Button 
                 type="submit" 
                 className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-                disabled={Boolean(!amount || !selectedMethod || !selectedFile || isVerifying || isProcessing || !canDeposit)}
+                disabled={Boolean(
+                  !amount || 
+                  !selectedMethod || 
+                  (selectedMethod === 'bank' && !selectedFile) || 
+                  isVerifying || 
+                  isProcessing || 
+                  !canDeposit
+                )}
               >
                 {isProcessing ? (
                   <>
