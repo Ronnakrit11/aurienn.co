@@ -60,6 +60,7 @@ export async function POST(request: Request) {
       version: '2.1',
       locale: 'th',
       paymentChannel: ['CC', 'QRCODE'],
+      merchantDefined1: user.id.toString(), // Store user ID for callback
     };
 
     // Make request to PaySolutions API
@@ -72,18 +73,27 @@ export async function POST(request: Request) {
       body: JSON.stringify(payload)
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('PaySolutions API error:', errorData);
-      throw new Error(errorData.message || 'Failed to create payment');
-    }
-
     const data = await response.json();
 
-    if (data.status !== 'success') {
-      throw new Error(data.message || 'Failed to create payment');
+    // Log the response for debugging
+    console.log('PaySolutions API Response:', data);
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: data.respDesc || 'Failed to create payment' },
+        { status: response.status }
+      );
     }
 
+    // Check for specific PaySolutions response codes
+    if (data.respCode !== '0000') {
+      return NextResponse.json(
+        { error: data.respDesc || 'Payment creation failed' },
+        { status: 400 }
+      );
+    }
+
+    // Return the payment URL
     return NextResponse.json({
       success: true,
       webPaymentUrl: data.webPaymentUrl
