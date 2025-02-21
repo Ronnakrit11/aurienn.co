@@ -92,9 +92,13 @@ export async function POST(request: Request) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${API_KEY}`,
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'x-api-key': API_KEY // Add x-api-key header
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        ...payload,
+        merchantId: MERCHANT_ID.padStart(8, '0') // Ensure merchantId is 8 digits
+      })
     });
 
     // Handle non-JSON responses
@@ -143,4 +147,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-} 
+}
