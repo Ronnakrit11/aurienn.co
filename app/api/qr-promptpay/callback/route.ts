@@ -16,6 +16,36 @@ interface CallbackData {
   timestamp: string;
 }
 
+// Error type for better error handling
+interface ErrorWithMessage {
+  message: string;
+}
+
+function isErrorWithMessage(error: unknown): error is ErrorWithMessage {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof (error as Record<string, unknown>).message === 'string'
+  );
+}
+
+function toErrorWithMessage(maybeError: unknown): ErrorWithMessage {
+  if (isErrorWithMessage(maybeError)) return maybeError;
+
+  try {
+    return new Error(JSON.stringify(maybeError));
+  } catch {
+    // fallback in case there's an error stringifying the maybeError
+    // like with circular references for example.
+    return new Error(String(maybeError));
+  }
+}
+
+function getErrorMessage(error: unknown) {
+  return toErrorWithMessage(error).message;
+}
+
 // Verify signature from callback
 function verifySignature(data: CallbackData, signature: string): boolean {
   const calculatedSignature = crypto
@@ -27,68 +57,120 @@ function verifySignature(data: CallbackData, signature: string): boolean {
 }
 
 export async function POST(request: Request) {
-  try {
-    const headersList = headers();
-    const signature = (await headersList).get('X-Signature');
+  console.log('Received callback request');
+  return NextResponse.json(
+    { error: 'Payment service configuration error' },
+    { status: 500 }
+  );
+//   try {
+//     const headersList = headers();
+//     const signature = (await headersList).get('X-Signature');
+//     console.log('Signature:', signature);
 
-    if (!signature) {
-      return NextResponse.json({ error: 'Missing signature' }, { status: 400 });
-    }
+//     if (!signature) {
+//       console.log('Missing signature');
+//       return new NextResponse(
+//         JSON.stringify({ status: false, message: 'Missing signature' }),
+//         { status: 400, headers: { 'Content-Type': 'application/json' } }
+//       );
+//     }
 
-    const data: CallbackData = await request.json();
+//     const data: CallbackData = await request.json();
+//     console.log('Callback data:', data);
 
-    // Verify signature
-    if (!verifySignature(data, signature)) {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
-    }
+//     // Verify signature
+//     if (!verifySignature(data, signature)) {
+//       console.log('Invalid signature');
+//       return new NextResponse(
+//         JSON.stringify({ status: false, message: 'Invalid signature' }),
+//         { status: 401, headers: { 'Content-Type': 'application/json' } }
+//       );
+//     }
 
-    // Update payment status and add balance in transaction
-    await db.transaction(async (tx) => {
-      // Get payment transaction
-      const [payment] = await tx
-        .select()
-        .from(paymentTransactions)
-        .where(eq(paymentTransactions.id, data.paymentId))
-        .limit(1);
+//     // Update payment status and add balance in transaction
+//     try {
+//       const [payment] = await db
+//         .select()
+//         .from(paymentTransactions)
+//         .where(
+//           and(
+//             eq(paymentTransactions.txnId, data.paymentId.toString()),
+//             eq(paymentTransactions.status, 'PE')
+//           )
+//         )
+//         .limit(1);
 
-      if (!payment) {
-        throw new Error('Payment not found');
-      }
+//       console.log('Found payment:', payment);
 
-      if (payment.status === 'CP') {
-        // Payment already processed
-        return NextResponse.json({ message: 'Payment already processed' });
-      }
+//       if (!payment) {
+//         console.log('Payment not found');
+//         return new NextResponse(
+//           JSON.stringify({ status: false, message: 'Payment not found' }),
+//           { status: 404, headers: { 'Content-Type': 'application/json' } }
+//         );
+//       }
 
-      // Update payment status
-      await tx
-        .update(paymentTransactions)
-        .set({
-          status: data.status === 'SUCCESS' ? 'CP' : 'FAIL',
-          statusName: data.status === 'SUCCESS' ? 'ชำระเงินสำเร็จ' : 'ชำระเงินไม่สำเร็จ',
-          paymentDate: new Date(data.paymentDate),
-          updatedAt: new Date(),
-        })
-        .where(eq(paymentTransactions.id, data.paymentId));
+//       if (payment.status === 'CP') {
+//         console.log('Payment already processed');
+//         return new NextResponse(
+//           JSON.stringify({ status: false, message: 'Payment already processed' }),
+//           { status: 400, headers: { 'Content-Type': 'application/json' } }
+//         );
+//       }
 
-      // If payment successful, update user balance
-      if (data.status === 'SUCCESS') {
-        await tx
-          .update(userBalances)
-          .set({
-            balance: sql`${userBalances.balance} + ${data.amount}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(userBalances.userId, payment.userId));
-      }
-    });
+//       // Update payment status
+//       await db.transaction(async (tx) => {
+//         await tx
+//           .update(paymentTransactions)
+//           .set({
+//             status: data.status === 'SUCCESS' ? 'CP' : 'FAIL',
+//             statusName: data.status === 'SUCCESS' ? 'ชำระเงินสำเร็จ' : 'ชำระเงินไม่สำเร็จ',
+//             paymentDate: new Date(data.paymentDate),
+//             updatedAt: new Date(),
+//           })
+//           .where(eq(paymentTransactions.id, payment.id));
 
-    return NextResponse.json({ message: 'Success' });
-  } catch (error) {
-    console.error('Error processing callback:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
+//         // If payment successful, update user balance
+//         if (data.status === 'SUCCESS') {
+//           await tx
+//             .update(userBalances)
+//             .set({
+//               balance: sql`${userBalances.balance} + ${data.amount}`,
+//               updatedAt: new Date(),
+//             })
+//             .where(eq(userBalances.userId, payment.userId));
+//         }
+//       });
+
+//       console.log('Payment processed successfully');
+//       return new NextResponse(
+//         JSON.stringify({
+//           status: true,
+//           message: data.status === 'SUCCESS' ? 'Payment successful' : 'Payment failed'
+//         }),
+//         { status: 200, headers: { 'Content-Type': 'application/json' } }
+//       );
+
+//     } catch (error: unknown) {
+//       console.error('Database error:', error);
+//       return new NextResponse(
+//         JSON.stringify({ 
+//           status: false, 
+//           message: 'Database error', 
+//           error: getErrorMessage(error)
+//         }),
+//         { status: 500, headers: { 'Content-Type': 'application/json' } }
+//       );
+//     }
+//   } catch (error: unknown) {
+//     console.error('Error processing callback:', error);
+//     return new NextResponse(
+//       JSON.stringify({ 
+//         status: false, 
+//         message: 'Internal server error', 
+//         error: getErrorMessage(error)
+//       }),
+//       { status: 500, headers: { 'Content-Type': 'application/json' } }
+//     );
+//   }
 }
