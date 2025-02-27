@@ -1,8 +1,6 @@
-
-
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
-import { verifiedSlips, userBalances, users, depositLimits } from '@/lib/db/schema';
+import { userBalances, users, depositLimits, paymentTransactions } from '@/lib/db/schema';
 import { eq, and, sql, gte } from 'drizzle-orm';
 import { getUser } from '@/lib/db/queries';
 import { sendDepositNotification } from '@/lib/telegram/bot';
@@ -114,8 +112,8 @@ function validateReceiver(data: EasySlipResponse): boolean {
 async function checkSlipAlreadyUsed(transRef: string): Promise<boolean> {
   const existingSlip = await db
     .select()
-    .from(verifiedSlips)
-    .where(eq(verifiedSlips.transRef, transRef))
+    .from(paymentTransactions)
+    .where(eq(paymentTransactions.transRef, transRef))
     .limit(1);
 
   return existingSlip.length > 0;
@@ -142,13 +140,13 @@ async function checkDepositLimits(userId: number, amount: number): Promise<{ all
 
   const [dailyTotal] = await db
     .select({
-      total: sql<string>`COALESCE(sum(${verifiedSlips.amount}), '0')`
+      total: sql<string>`COALESCE(sum(${paymentTransactions.amount}), '0')`
     })
-    .from(verifiedSlips)
+    .from(paymentTransactions)
     .where(
       and(
-        eq(verifiedSlips.userId, userId),
-        gte(verifiedSlips.verifiedAt, today)
+        eq(paymentTransactions.userId, userId),
+        gte(paymentTransactions.createdAt, today)
       )
     );
 
@@ -167,39 +165,37 @@ async function checkDepositLimits(userId: number, amount: number): Promise<{ all
 }
 
 async function recordVerifiedSlip(transRef: string, amount: number, userId: number | null) {
+  if (!userId) {
+    throw new Error('User ID is required');
+  }
+
   await db.transaction(async (tx) => {
     // Record the verified slip
-    await tx.insert(verifiedSlips).values({
-      transRef: transRef,
+    await tx.insert(paymentTransactions).values({
+      status: 'CP',
+      statusName: 'ชำระเงินสำเร็จ',
+      total: amount.toString(),
       amount: amount.toString(),
       userId: userId,
+      method: 'BANK',
+      transRef: transRef,
+      merchantId: '',
+      orderNo: transRef,
+      refNo: transRef,
+      productDetail: 'เติมเงินผ่านการโอนเงิน',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      paymentDate: new Date(),
     });
 
-    if (userId) {
-      // Get current balance or create new balance record
-      const currentBalance = await tx
-        .select()
-        .from(userBalances)
-        .where(eq(userBalances.userId, userId))
-        .limit(1);
-
-      if (currentBalance.length === 0) {
-        // Create new balance record
-        await tx.insert(userBalances).values({
-          userId: userId,
-          balance: amount.toString(),
-        });
-      } else {
-        // Update existing balance
-        await tx
-          .update(userBalances)
-          .set({
-            balance: (Number(currentBalance[0].balance) + amount).toString(),
-            updatedAt: new Date(),
-          })
-          .where(eq(userBalances.userId, userId));
-      }
-    }
+    // Update user balance
+    await tx
+      .update(userBalances)
+      .set({
+        balance: sql`${userBalances.balance} + ${amount}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(userBalances.userId, userId));
   });
 }
 

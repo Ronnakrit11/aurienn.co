@@ -1,516 +1,1171 @@
-'use client';
+"use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Wallet, Loader2, Upload, Copy, Check, CreditCard } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
-import { useUser } from '@/lib/auth';
-import Image from 'next/image';
-import { useTheme } from '@/lib/theme-provider';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Dialog,
+	DialogContent,
+	DialogHeader,
+	DialogTitle,
+	DialogDescription,
+} from "@/components/ui/dialog";
+import { Wallet, Loader2, Upload, Copy, Check, CreditCard } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
+import { useUser } from "@/lib/auth";
+import Image from "next/image";
+import { useTheme } from "@/lib/theme-provider";
+import { useRouter } from "next/navigation";
+import { QrCode } from "lucide-react";
 
 interface BankAccount {
-  bank: string;
-  accountNumber: string;
-  accountName: string;
+	bank: string;
+	accountNumber: string;
+	accountName: string;
 }
 
 interface VerifiedSlip {
-  id: number;
-  amount: string;
-  verifiedAt: string;
-  status: 'completed' | 'pending';
+	id: number;
+	amount: string;
+	verifiedAt: string;
+	status: "completed" | "pending";
 }
 
 interface DepositLimit {
-  id: number;
-  name: string;
-  dailyLimit: string;
+	id: number;
+	name: string;
+	dailyLimit: string;
+}
+
+interface QrData {
+	amount: number;
+	qrImage: string;
+	promptpayNumber: string;
+	createdAt: string;
 }
 
 const BANK_NAMES: { [key: string]: string } = {
-  'ktb': 'ธนาคารกรุงไทย',
-  'kbank': 'ธนาคารกสิกรไทย',
-  'scb': 'ธนาคารไทยพาณิชย์',
-  'gsb': 'ธนาคารออมสิน',
-  'kkp': 'ธนาคารเกียรตินาคินภัทร'
+	ktb: "ธนาคารกรุงไทย",
+	kbank: "ธนาคารกสิกรไทย",
+	scb: "ธนาคารไทยพาณิชย์",
+	gsb: "ธนาคารออมสิน",
+	kkp: "ธนาคารเกียรตินาคินภัทร",
 };
 
 export default function DepositPage() {
-  const { user } = useUser();
-  const { theme } = useTheme();
-  const [amount, setAmount] = useState('');
-  const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [recentDeposits, setRecentDeposits] = useState<VerifiedSlip[]>([]);
-  const [balance, setBalance] = useState(0);
-  const [depositLimit, setDepositLimit] = useState<DepositLimit | null>(null);
-  const [showLimitDialog, setShowLimitDialog] = useState(true);
-  const [copied, setCopied] = useState(false);
-  const [todayDeposits, setTodayDeposits] = useState(0);
+	const { user } = useUser();
+	const { theme } = useTheme();
+	const router = useRouter();
+	const [amount, setAmount] = useState("");
+	const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
+	const [selectedFile, setSelectedFile] = useState<File | null>(null);
+	const [isVerifying, setIsVerifying] = useState(false);
+	const [isProcessing, setIsProcessing] = useState(false);
+	const [recentDeposits, setRecentDeposits] = useState<VerifiedSlip[]>([]);
+	const [balance, setBalance] = useState(0);
+	const [depositLimit, setDepositLimit] = useState<DepositLimit | null>(null);
+	const [showLimitDialog, setShowLimitDialog] = useState(true);
+	const [copied, setCopied] = useState(false);
+	const [todayDeposits, setTodayDeposits] = useState(0);
+	const [selectedBank, setSelectedBank] = useState<string>("");
+	const [installmentPeriod, setInstallmentPeriod] = useState<string>("");
+	const [showQrModal, setShowQrModal] = useState(false);
+	const [qrData, setQrData] = useState<QrData | null>(null);
+	const [countdown, setCountdown] = useState<number>(0);
+	const [txnId, setTxnId] = useState<string>("");
+	const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+	const [isLoading, setIsLoading] = useState(false);
+	const [isCancelling, setIsCancelling] = useState(false);
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        // Get today's date at midnight
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+	const bankOptions = [
+		{ value: "kbank", label: "Kasikorn Bank" },
+		{ value: "bbl", label: "Bangkok Bank" },
+		{ value: "ktb", label: "Krung Thai Bank" },
+		{ value: "scb", label: "SCB" },
+		{ value: "bay", label: "Krungsri (KCC)" },
+		{ value: "kfc", label: "First Choice (KFC)" },
+		{ value: "all", label: "ทุกธนาคาร" }
+	];
 
-        const [depositsResponse, balanceResponse, limitResponse] = await Promise.all([
-          fetch('/api/deposits/recent'),
-          fetch('/api/user/balance'),
-          fetch('/api/user/deposit-limit')
-        ]);
+	const getInstallmentPeriods = (bank: string, amount: number) => {
+		const monthlyPayment = amount ? Number(amount) : 0;
+		
+		switch (bank) {
+			case "kbank":
+			case "bbl":
+			case "ktb":
+				return [
+					{ value: "3", label: "3 เดือน" },
+					{ value: "4", label: "4 เดือน" },
+					{ value: "5", label: "5 เดือน" },
+					{ value: "6", label: "6 เดือน" },
+					{ value: "7", label: "7 เดือน" },
+					{ value: "8", label: "8 เดือน" },
+					{ value: "9", label: "9 เดือน" },
+					{ value: "10", label: "10 เดือน" }
+				].filter(period => {
+					// For BBL, check minimum monthly payment of 500 THB
+					if (bank === "bbl") {
+						return monthlyPayment / Number(period.value) >= 500;
+					}
+					return true;
+				});
+			case "scb":
+			case "bay": // Krungsri
+				return [
+					{ value: "3", label: "3 เดือน" },
+					{ value: "4", label: "4 เดือน" },
+					{ value: "6", label: "6 เดือน" },
+					{ value: "10", label: "10 เดือน" }
+				];
+			case "kfc": // First Choice
+				return [
+					{ value: "3", label: "3 เดือน" },
+					{ value: "4", label: "4 เดือน" },
+					{ value: "6", label: "6 เดือน" }
+				];
+			case "all":
+			default:
+				return [
+					{ value: "3", label: "3 เดือน" },
+					{ value: "4", label: "4 เดือน" },
+					{ value: "6", label: "6 เดือน" }
+				];
+		}
+	};
 
-        if (depositsResponse.ok && balanceResponse.ok && limitResponse.ok) {
-          const [depositsData, balanceData, limitData] = await Promise.all([
-            depositsResponse.json(),
-            balanceResponse.json(),
-            limitResponse.json()
-          ]);
+	useEffect(() => {
+		// Reset installment period when bank changes
+		setInstallmentPeriod("");
+	}, [selectedBank]);
 
-          // Calculate today's deposits
-          const todayTotal = depositsData
-            .filter((deposit: VerifiedSlip) => new Date(deposit.verifiedAt) >= today)
-            .reduce((sum: number, deposit: VerifiedSlip) => sum + Number(deposit.amount), 0);
+	useEffect(() => {
+		// Reset installment period if amount changes and it's below minimum monthly payment for BBL
+		if (selectedBank === "bbl" && amount) {
+			const monthlyPayment = Number(amount) / Number(installmentPeriod);
+			if (monthlyPayment < 500) {
+				setInstallmentPeriod("");
+			}
+		}
+	}, [amount, selectedBank, installmentPeriod]);
 
-          setRecentDeposits(depositsData);
-          setBalance(Number(balanceData.balance));
-          setDepositLimit(limitData);
-          setTodayDeposits(todayTotal);
-        }
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      }
-    }
+	const paymentMethods = [
+		{
+			id: "bank",
+			name: "Bank Transfer",
+			accountNumber: "182-8-51730-5",
+			accountName: "บจก.เอ็กซ์เพิร์ท เอท โซลูชั่น จำกัด",
+		},
+		{
+			id: "card",
+			name: "Credit/Debit Card",
+			description: "Visa, Mastercard, JCB",
+		},
+		{
+			id: "card-r",
+			name: "Credit/Debit Card ผ่อนชำระ",
+			description: "Visa, Mastercard, JCB",
+		},
+		{
+			id: "qr-promptpay",
+			name: "QR PromptPay",
+			description: "Scan QR code to pay",
+		},
+	];
 
-    if (user) {
-      fetchData();
-    }
-  }, [user]);
+	useEffect(() => {
+		async function fetchData() {
+			try {
+				// Get today's date at midnight
+				const today = new Date();
+				today.setHours(0, 0, 0, 0);
 
-  const handleDeposit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (selectedMethod === 'bank' && (!selectedFile || !amount)) {
-      toast.error('กรุณากรอกข้อมูลให้ครบถ้วน');
-      return;
-    }
-  
-    const amountNum = Number(amount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      toast.error('กรุณากรอกจำนวนเงินที่ถูกต้อง');
-      return;
-    }
-  
-    if (depositLimit) {
-      const dailyLimit = Number(depositLimit.dailyLimit);
-      const remainingDailyLimit = dailyLimit - todayDeposits;
+				const [depositsResponse, balanceResponse, limitResponse] =
+					await Promise.all([
+						fetch("/api/transactions/deposit"),
+						fetch("/api/user/balance"),
+						fetch("/api/user/deposit-limit"),
+					]);
 
-      if (amountNum > remainingDailyLimit) {
-        toast.error('ไม่สามารถเพิ่มเงินได้ เนื่องจากเกินวงเงินที่กำหนด');
-        return;
-      }
-    }
+				if (
+					depositsResponse.ok &&
+					balanceResponse.ok &&
+					limitResponse.ok
+				) {
+					const [depositsData, balanceData, limitData] =
+						await Promise.all([
+							depositsResponse.json(),
+							balanceResponse.json(),
+							limitResponse.json(),
+						]);
 
-    setIsProcessing(true);
+					// Calculate today's deposits
+					const todayTotal = depositsData
+						.filter(
+							(deposit: VerifiedSlip) =>
+								new Date(deposit.verifiedAt) >= today
+						)
+						.reduce(
+							(sum: number, deposit: VerifiedSlip) =>
+								sum + Number(deposit.amount),
+							0
+						);
 
-    try {
-      if (selectedMethod === 'bank') {
-        // Handle bank transfer
-        const formData = new FormData();
-        formData.append('slip', selectedFile!);
-        formData.append('amount', amount);
+					setRecentDeposits(depositsData);
+					setBalance(Number(balanceData.balance));
+					setDepositLimit(limitData);
+					setTodayDeposits(todayTotal);
+				}
+			} catch (error) {
+				console.error("Error fetching data:", error);
+			}
+		}
 
-        const response = await fetch('/api/verify-slip', {
-          method: 'POST',
-          body: formData,
-        });
+		if (user) {
+			fetchData();
+		}
+	}, [user]);
 
-        const data = await response.json();
+	const handleDeposit = async (e: React.FormEvent) => {
+		e.preventDefault();
 
-        if (!response.ok) {
-          if (data.message === 'slip_already_used') {
-            toast.error('สลิปถูกใช้ไปแล้ว');
-            return;
-          }
-          if (data.message === 'deposit_limit_exceeded') {
-            toast.error(data.details);
-            return;
-          }
-          throw new Error(data.message || 'Failed to verify slip');
-        }
+		if (selectedMethod === "bank" && (!selectedFile || !amount)) {
+			toast.error("กรุณากรอกข้อมูลให้ครบถ้วน");
+			return;
+		}
 
-        if (data.status === 200) {
-          toast.success('ยืนยันสลิปสำเร็จ');
-          setAmount('');
-          setSelectedMethod(null);
-          setSelectedFile(null);
-          
-          // Refresh data
-          const [recentResponse, balanceResponse] = await Promise.all([
-            fetch('/api/deposits/recent'),
-            fetch('/api/user/balance')
-          ]);
+		const amountNum = Number(amount);
+		if (isNaN(amountNum) || amountNum <= 0) {
+			toast.error("กรุณากรอกจำนวนเงินที่ถูกต้อง");
+			return;
+		}
 
-          if (recentResponse.ok) {
-            const recentData = await recentResponse.json();
-            setRecentDeposits(recentData);
-            
-            // Update today's deposits
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const todayTotal = recentData
-              .filter((deposit: VerifiedSlip) => new Date(deposit.verifiedAt) >= today)
-              .reduce((sum: number, deposit: VerifiedSlip) => sum + Number(deposit.amount), 0);
-            setTodayDeposits(todayTotal);
-          }
+		if (depositLimit) {
+			const dailyLimit = Number(depositLimit.dailyLimit);
+			const remainingDailyLimit = dailyLimit - todayDeposits;
 
-          if (balanceResponse.ok) {
-            const balanceData = await balanceResponse.json();
-            setBalance(Number(balanceData.balance));
-          }
-        } else {
-          toast.error(data.message || 'สลิปไม่ถูกต้อง');
-        }
-      } else if (selectedMethod === 'card') {
-        // Handle credit/debit card payment through PaySolutions
-        const response = await fetch('/api/paysolutions/create-payment', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ amount: amountNum }),
-        });
+			if (amountNum > remainingDailyLimit) {
+				toast.error("ไม่สามารถเพิ่มเงินได้ เนื่องจากเกินวงเงินที่กำหนด");
+				return;
+			}
+		}
 
-        const data = await response.json();
+		setIsProcessing(true);
 
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to create payment');
-        }
+		try {
+			if (selectedMethod === "bank") {
+				// Handle bank transfer
+				const formData = new FormData();
+				formData.append("slip", selectedFile!);
+				formData.append("amount", amount);
 
-        // Redirect to PaySolutions payment page
-        window.location.href = data.webPaymentUrl;
-        return;
-      }
-    } catch (error) {
-      console.error('Error processing deposit:', error);
-      toast.error('ไม่สามารถดำเนินการได้');
-    } finally {
-      setIsProcessing(false);
-      setIsVerifying(false);
-    }
-  };
+				const response = await fetch("/api/verify-slip", {
+					method: "POST",
+					body: formData,
+				});
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error('ขนาดไฟล์ต้องไม่เกิน 10MB');
-        return;
-      }
-      if (!file.type.startsWith('image/')) {
-        toast.error('กรุณาอัพโหลดไฟล์รูปภาพเท่านั้น');
-        return;
-      }
-      setSelectedFile(file);
-    }
-  };
+				const data = await response.json();
 
-  const handleCopyAccountNumber = () => {
-    navigator.clipboard.writeText('192-2-95245-7');
-    setCopied(true);
-    toast.success('คัดลอกเลขบัญชีแล้ว');
-    setTimeout(() => setCopied(false), 2000);
-  };
+				if (!response.ok) {
+					if (data.message === "slip_already_used") {
+						toast.error("สลิปถูกใช้ไปแล้ว");
+						return;
+					}
+					if (data.message === "deposit_limit_exceeded") {
+						toast.error(data.details);
+						return;
+					}
+					throw new Error(data.message || "Failed to verify slip");
+				}
 
-  const paymentMethods = [
-    {
-      id: 'bank',
-      name: 'Bank Transfer',
-      accountNumber: '182-8-51730-5',
-      accountName: 'บจก.เอ็กซ์เพิร์ท เอท โซลูชั่น จำกัด'
-    },
-    {
-      id: 'card',
-      name: 'Credit/Debit Card',
-      description: 'Visa, Mastercard, JCB'
-    }
-  ];
+				if (data.status === 200) {
+					toast.success("ยืนยันสลิปสำเร็จ");
+					setAmount("");
+					setSelectedMethod(null);
+					setSelectedFile(null);
 
-  function formatDate(dateString: string) {
-    return new Date(dateString).toLocaleDateString('th-TH', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-  }
+					// Refresh data
+					const [recentResponse, balanceResponse] = await Promise.all([
+						fetch("/api/deposits/recent"),
+						fetch("/api/user/balance"),
+					]);
 
-  // Calculate remaining deposit limit
-  const remainingDailyLimit = depositLimit ? Number(depositLimit.dailyLimit) - todayDeposits : 0;
-  const canDeposit = Boolean(depositLimit && (!amount || (Number(amount) > 0 && Number(amount) <= remainingDailyLimit)));
-  const showLimitError = Boolean(amount && Number(amount) > 0 && !canDeposit);
+					if (recentResponse.ok) {
+						const recentData = await recentResponse.json();
+						setRecentDeposits(recentData);
 
-  if (!depositLimit) {
-    return (
-      <section className="flex-1 p-4 lg:p-8">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto" />
-          <p className="mt-2">Loading deposit limits...</p>
-        </div>
-      </section>
-    );
-  }
+						// Update today's deposits
+						const today = new Date();
+						today.setHours(0, 0, 0, 0);
+						const todayTotal = recentData
+							.filter(
+								(deposit: VerifiedSlip) =>
+									new Date(deposit.verifiedAt) >= today
+							)
+							.reduce(
+								(sum: number, deposit: VerifiedSlip) =>
+									sum + Number(deposit.amount),
+								0
+							);
+						setTodayDeposits(todayTotal);
+					}
 
-  return (
-    <section className="flex-1 p-4 lg:p-8">
-      <Dialog open={showLimitDialog} onOpenChange={setShowLimitDialog}>
-        <DialogContent className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
+					if (balanceResponse.ok) {
+						const balanceData = await balanceResponse.json();
+						setBalance(Number(balanceData.balance));
+					}
+				} else {
+					toast.error(data.message || "สลิปไม่ถูกต้อง");
+				}
+			} else if (selectedMethod === "card" || selectedMethod === "card-r") {
+				// For card payments, submit the form directly to PaySolutions
+				const form = e.target as HTMLFormElement;
+				form.submit();
+				return;
+			} else if (selectedMethod === "qr-promptpay") {
+				// Handle QR PromptPay
+				const response = await fetch("/api/qr-promptpay/create", {
+					method: "POST",
+					body: JSON.stringify({ amount }),
+					headers: {
+						"Content-Type": "application/json",
+					},
+				});
+
+				const data = await response.json();
+
+				if (!response.ok) {
+					toast.error(data.error || "Failed to generate QR code");
+					return;
+				}
+
+				setQrData({
+					amount: data.data.amount,
+					qrImage: data.data.qrImage,
+					promptpayNumber: data.data.promptpayNumber,
+					createdAt: data.data.createdAt
+				});
+				setTxnId(data.data.txnId);
+				setShowQrModal(true);
+			}
+		} catch (error) {
+			console.error("Error processing deposit:", error);
+			toast.error("ไม่สามารถดำเนินการได้");
+		} finally {
+			setIsProcessing(false);
+		}
+	};
+
+	const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		if (e.target.files && e.target.files[0]) {
+			const file = e.target.files[0];
+			if (file.size > 10 * 1024 * 1024) {
+				toast.error("ขนาดไฟล์ต้องไม่เกิน 10MB");
+				return;
+			}
+			if (!file.type.startsWith("image/")) {
+				toast.error("กรุณาอัพโหลดไฟล์รูปภาพเท่านั้น");
+				return;
+			}
+			setSelectedFile(file);
+		}
+	};
+
+	const handleCopyAccountNumber = () => {
+		navigator.clipboard.writeText("192-2-95245-7");
+		setCopied(true);
+		toast.success("คัดลอกเลขบัญชีแล้ว");
+		setTimeout(() => setCopied(false), 2000);
+	};
+
+	// Helper function to format date
+	const formatDate = (dateString: string) => {
+		try {
+			return new Date(dateString).toLocaleString('th-TH', {
+				year: 'numeric',
+				month: 'long',
+				day: 'numeric',
+				hour: '2-digit',
+				minute: '2-digit',
+				second: '2-digit',
+			});
+		} catch (error) {
+			console.error('Error formatting date:', error);
+			return 'Invalid Date';
+		}
+	};
+
+	// Calculate remaining deposit limit
+	const remainingDailyLimit = depositLimit
+		? Number(depositLimit.dailyLimit) - todayDeposits
+		: 0;
+	const canDeposit = Boolean(
+		depositLimit &&
+			(!amount ||
+				(Number(amount) > 0 && Number(amount) <= remainingDailyLimit))
+	);
+	const showLimitError = Boolean(amount && Number(amount) > 0 && !canDeposit);
+
+	// Function to format time as MM:SS
+	const formatTime = (seconds: number) => {
+		const minutes = Math.floor(seconds / 60);
+		const remainingSeconds = seconds % 60;
+		return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+	};
+
+	// Effect for countdown timer
+	useEffect(() => {
+		if (!qrData || !showQrModal) return;
+
+		const createdTime = new Date(qrData.createdAt).getTime();
+		const timeLimit = 15 * 60 * 1000; // 15 minutes in milliseconds
+		const endTime = createdTime + timeLimit;
+
+		const timer = setInterval(() => {
+			const now = new Date().getTime();
+			const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
+			
+			setCountdown(remaining);
+
+			if (remaining <= 0) {
+				clearInterval(timer);
+				setShowQrModal(false);
+				toast.error("QR Code หมดอายุ กรุณาทำรายการใหม่");
+			}
+		}, 1000);
+
+		return () => clearInterval(timer);
+	}, [qrData, showQrModal]);
+
+	// Function to handle redirect after successful payment
+	const handlePaymentSuccess = useCallback(() => {
+		router.push("/dashboard/deposit/success");
+	}, [router]);
+
+	// Effect for checking payment status
+	useEffect(() => {
+		if (!txnId || !showQrModal) return;
+
+		const checkPayment = async () => {
+			try {
+				const response = await fetch(`/api/qr-promptpay/check/${txnId}`);
+				const result = await response.json();
+
+				if (result.data.status === "SUCCESS") {
+					toast.success("ชำระเงินสำเร็จ");
+					setShowQrModal(false);
+					handlePaymentSuccess();
+				} else if (result.data.status === "FAIL") {
+					toast.error("การชำระเงินไม่สำเร็จ");
+					setShowQrModal(false);
+				}
+			} catch (error) {
+				console.error("Error checking payment status:", error);
+			}
+		};
+
+		// Initial check
+		checkPayment();
+
+		// Poll every 3 seconds
+		const statusInterval = setInterval(checkPayment, 3000);
+		return () => clearInterval(statusInterval);
+	}, [txnId, showQrModal, handlePaymentSuccess]);
+
+	// Check for pending transactions on mount
+	useEffect(() => {
+		const checkPendingTransaction = async () => {
+			try {
+				const response = await fetch('/api/qr-promptpay/pending');
+				const result = await response.json();
+				console.log('Pending transaction check:', result);
+
+				if (result.status && result.data) {
+					setQrData(result.data);
+					setTxnId(result.data.txnId);
+					setShowQrModal(true);
+				}
+			} catch (error) {
+				console.error('Error checking pending transaction:', error);
+			}
+		};
+
+		checkPendingTransaction();
+	}, []);
+
+	// Function to handle cancel button click
+	const handleCancelClick = () => {
+		setShowCancelConfirm(true);
+	};
+
+	// Function to handle cancel confirmation
+	const handleCancelConfirm = async () => {
+		if (!txnId) return;
+
+		setIsCancelling(true);
+		try {
+			const response = await fetch(`/api/qr-promptpay/cancel/${txnId}`, {
+				method: 'DELETE',
+			});
+
+			if (response.ok) {
+				toast.success('ยกเลิกรายการสำเร็จ');
+				setShowQrModal(false);
+			} else {
+				toast.error('ไม่สามารถยกเลิกรายการได้');
+			}
+		} catch (error) {
+			console.error('Error cancelling payment:', error);
+			toast.error('เกิดข้อผิดพลาดในการยกเลิกรายการ');
+		} finally {
+			setIsCancelling(false);
+			setShowCancelConfirm(false);
+		}
+	};
+
+	// Function to handle QR payment creation
+	const handleQrPayment = async (amount: string) => {
+		setIsLoading(true);
+		try {
+			const response = await fetch('/api/qr-promptpay/create', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ amount }),
+			});
+
+			const result = await response.json();
+			if (response.ok) {
+				setQrData(result.data);
+				setTxnId(result.data.txnId);
+				setShowQrModal(true);
+			} else {
+				toast.error(result.error || 'ไม่สามารถสร้าง QR Code ได้');
+			}
+		} catch (error) {
+			console.error('Error creating QR payment:', error);
+			toast.error('เกิดข้อผิดพลาดในการสร้าง QR Code');
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	// Helper function to format status
+	const getStatusBadge = (status: string) => {
+		const statusMap = {
+			'PE': { label: 'รอการชำระเงิน', className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100' },
+			'CP': { label: 'ชำระเงินสำเร็จ', className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' },
+			'CANCELLED': { label: 'ยกเลิกรายการ', className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' },
+			'FAIL': { label: 'ชำระเงินไม่สำเร็จ', className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' },
+		};
+
+		const statusInfo = statusMap[status as keyof typeof statusMap] || { 
+			label: status, 
+			className: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100'
+		};
+
+		return (
+			<span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusInfo.className}`}>
+				{statusInfo.label}
+			</span>
+		);
+	};
+
+	const getMethodLabel = (method: string) => {
+		const methodMap = {
+			'QR': 'QR PromptPay',
+			'BANK': 'โอนผ่านธนาคาร',
+		};
+		return methodMap[method as keyof typeof methodMap] || method;
+	};
+
+	if (!depositLimit) {
+		return (
+			<section className="flex-1 p-4 lg:p-8">
+				<div className="text-center">
+					<Loader2 className="h-8 w-8 animate-spin mx-auto" />
+					<p className="mt-2">Loading deposit limits...</p>
+				</div>
+			</section>
+		);
+	}
+
+	return (
+		<section className="flex-1 p-4 lg:p-8">
+			<Dialog open={showLimitDialog} onOpenChange={setShowLimitDialog}>
+				<DialogContent
+					className={
+						theme === "dark" ? "bg-[#151515] border-[#2A2A2A]" : ""
+					}
+				>
+					<DialogHeader>
+						<DialogTitle
+							className={theme === "dark" ? "text-white" : ""}
+						>
+							วงเงินการฝาก
+						</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-4">
+						<div
+							className={`p-4 rounded-lg ${
+								theme === "dark" ? "bg-[#1a1a1a]" : "bg-gray-50"
+							}`}
+						>
+							<p
+								className={`font-medium mb-2 ${
+									theme === "dark" ? "text-white" : ""
+								}`}
+							>
+								ระดับวงเงิน: {depositLimit?.name || "Level 1"}
+							</p>
+							<div
+								className={`space-y-2 ${
+									theme === "dark"
+										? "text-gray-300"
+										: "text-gray-600"
+								}`}
+							>
+								<p>
+									วงเงินลิมิต: ฿
+									{Number(
+										depositLimit?.dailyLimit || 50000
+									).toLocaleString()}
+								</p>
+								<p>
+									ยอดฝากวันนี้: ฿
+									{todayDeposits.toLocaleString()}
+								</p>
+								<p>
+									วงเงินคงเหลือที่ฝากได้: ฿
+									{remainingDailyLimit.toLocaleString()}
+								</p>
+								<p className="text-sm text-blue-500">
+									<a
+										href="https://lin.ee/EO0xuyG"
+										target="_blank"
+										rel="noopener noreferrer"
+									>
+										ติดต่อพนักงานเพื่อปลดลิมิต
+									</a>
+								</p>
+							</div>
+						</div>
+						<Button
+							className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+							onClick={() => setShowLimitDialog(false)}
+						>
+							ตกลง
+						</Button>
+					</div>
+				</DialogContent>
+			</Dialog>
+
+			<h1
+				className={`text-lg lg:text-2xl font-medium mb-6 ${
+					theme === "dark" ? "text-white" : "text-gray-900"
+				}`}
+			>
+				Deposit Funds
+			</h1>
+
+			<div className="grid gap-6 md:grid-cols-2">
+				<Card
+					className={
+						theme === "dark" ? "bg-[#151515] border-[#2A2A2A]" : ""
+					}
+				>
+					<CardHeader>
+						<CardTitle
+							className={`flex items-center space-x-2 ${
+								theme === "dark" ? "text-white" : ""
+							}`}
+						>
+							<Wallet className="h-6 w-6 text-orange-500" />
+							<span>Make a Deposit</span>
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<form
+							onSubmit={handleDeposit}
+							className="space-y-6"
+							action={
+								selectedMethod === "card" ||
+								selectedMethod === "card-r"
+									? "https://payments.paysolutions.asia/payment"
+									: undefined
+							}
+							method={
+								selectedMethod === "card" ||
+								selectedMethod === "card-r"
+									? "post"
+									: undefined
+							}
+						>
+							<div className="space-y-2">
+								<Label
+									htmlFor="amount"
+									className={
+										theme === "dark" ? "text-white" : ""
+									}
+								>
+									Amount (THB)
+								</Label>
+								<Input
+									id="amount"
+									type="number"
+									value={amount}
+									onChange={(e) => setAmount(e.target.value)}
+									placeholder="Enter amount"
+									required
+									min={selectedMethod === "card-r" ? "3000" : "0"}
+									step="0.01"
+									className={`text-lg ${
+										theme === "dark"
+											? "bg-[#1a1a1a] border-[#2A2A2A] text-white"
+											: ""
+									}`}
+								/>
+								{selectedMethod === "card-r" && (
+									<p className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
+										* ต้องฝากขั้นต่ำ 3,000 บาท สำหรับการผ่อนชำระ
+									</p>
+								)}
+								{depositLimit && (
+									<div
+										className={`text-sm ${
+											theme === "dark"
+												? "text-gray-400"
+												: "text-gray-500"
+										}`}
+									>
+										<p>
+											ยอดฝากวันนี้: ฿
+											{todayDeposits.toLocaleString()}
+										</p>
+										<p>
+											วงเงินคงเหลือที่ฝากได้: ฿
+											{remainingDailyLimit.toLocaleString()}
+										</p>
+									</div>
+								)}
+								{showLimitError && (
+									<p className="text-sm text-red-500">
+										ไม่สามารถเพิ่มเงินได้
+										เนื่องจากเกินวงเงินที่กำหนด
+									</p>
+								)}
+							</div>
+
+							<div className="space-y-2">
+								<Label
+									className={
+										theme === "dark" ? "text-white" : ""
+									}
+								>
+									Select Payment Method
+								</Label>
+								<div className="grid gap-4">
+									{paymentMethods.map((method) => (
+										<div
+											key={method.id}
+											className={`w-full p-4 rounded-md border cursor-pointer ${
+												selectedMethod === method.id
+													? "bg-orange-500 text-white border-orange-600"
+													: theme === "dark"
+													? "bg-[#1a1a1a] border-[#2A2A2A] text-white hover:bg-[#202020]"
+													: "bg-white border-gray-200 hover:bg-gray-50"
+											}`}
+											onClick={() => !showLimitError && setSelectedMethod(method.id)}
+										>
+											<div className="flex items-center space-x-4 w-full">
+												{method.id === "bank" ? (
+													<Image
+														src="/kbank-logo.jpg"
+														alt="Bank Logo"
+														width={70}
+														height={60}
+														className="rounded-md"
+													/>
+												) : (
+													<div
+														className={`p-4 ${
+															theme === "dark"
+																? "bg-[#202020]"
+																: "bg-gray-100"
+														} rounded-md`}
+													>
+														<CreditCard className="h-8 w-8 text-orange-500" />
+													</div>
+												)}
+												<div className="flex flex-col items-start flex-grow">
+													<span className="font-medium">{method.name}</span>
+													{method.id === "bank" ? (
+														<div className="flex items-center justify-between w-full mt-1">
+															<div>
+																<p className="text-sm opacity-75">
+																	Bank: {method.accountNumber}
+																</p>
+																<p className="text-sm opacity-75">
+																	{method.accountName}
+																</p>
+															</div>
+															<Button
+																type="button"
+																variant="ghost"
+																size="sm"
+																className={`ml-2 ${
+																	theme === "dark"
+																		? "hover:bg-[#252525]"
+																		: ""
+																}`}
+																onClick={(e) => {
+																	e.stopPropagation();
+																	handleCopyAccountNumber();
+																}}
+															>
+																{copied ? (
+																	<Check className="h-4 w-4 text-green-500" />
+																) : (
+																	<Copy className="h-4 w-4" />
+																)}
+															</Button>
+														</div>
+													) : (
+														<p className="text-sm opacity-75">
+															{method.description}
+														</p>
+													)}
+												</div>
+											</div>
+										</div>
+									))}
+								</div>
+							</div>
+
+							{selectedMethod === "bank" && (
+								<div className="space-y-2">
+									<Label
+										htmlFor="slip"
+										className={
+											theme === "dark" ? "text-white" : ""
+										}
+									>
+										Upload Transfer Slip
+									</Label>
+									<div className="flex items-center gap-4">
+										<Input
+											id="slip"
+											type="file"
+											accept="image/*"
+											onChange={handleFileChange}
+											required
+											className="hidden"
+											disabled={Boolean(showLimitError)}
+										/>
+										<Button
+											type="button"
+											variant="outline"
+											className={`w-full h-24 flex flex-col items-center justify-center border-dashed ${
+												theme === "dark"
+													? "bg-[#1a1a1a] border-[#2A2A2A] text-white hover:bg-[#202020]"
+													: ""
+											}`}
+											onClick={() =>
+												document
+													.getElementById("slip")
+													?.click()
+											}
+											disabled={Boolean(showLimitError)}
+										>
+											<Upload className="h-6 w-6 mb-2" />
+											{selectedFile ? (
+												<span className="text-sm">
+													{selectedFile.name}
+												</span>
+											) : (
+												<span className="text-sm">
+													Click to upload slip
+												</span>
+											)}
+										</Button>
+									</div>
+								</div>
+							)}
+
+							{selectedMethod === "card-r" && (
+								<div className="space-y-4">
+									<div className="space-y-2">
+										<Label
+											htmlFor="bank"
+											className={theme === "dark" ? "text-white" : ""}
+										>
+											เลือกธนาคาร
+										</Label>
+										<select
+											id="bank"
+											value={selectedBank}
+											onChange={(e) => setSelectedBank(e.target.value)}
+											className={`w-full h-10 px-3 rounded-md border ${
+												theme === "dark"
+													? "bg-[#1a1a1a] border-[#2A2A2A] text-white"
+													: "border-input bg-background"
+											}`}
+											required
+										>
+											<option value="">เลือกธนาคาร</option>
+											{bankOptions.map((bank) => (
+												<option key={bank.value} value={bank.value}>
+													{bank.label}
+												</option>
+											))}
+										</select>
+									</div>
+
+									{selectedBank && (
+										<div className="space-y-2">
+											<Label
+												htmlFor="installment"
+												className={theme === "dark" ? "text-white" : ""}
+											>
+												ระยะเวลาผ่อนชำระ
+											</Label>
+											<select
+												id="installment"
+												value={installmentPeriod}
+												onChange={(e) => setInstallmentPeriod(e.target.value)}
+												className={`w-full h-10 px-3 rounded-md border ${
+													theme === "dark"
+														? "bg-[#1a1a1a] border-[#2A2A2A] text-white"
+														: "border-input bg-background"
+												}`}
+												required
+											>
+												<option value="">เลือกจำนวนเดือน</option>
+												{getInstallmentPeriods(selectedBank, Number(amount)).map((period) => (
+													<option key={period.value} value={period.value}>
+														{period.label}
+														{selectedBank === "bbl" && amount && (
+															<> (ผ่อนเดือนละ ฿{Math.ceil(Number(amount) / Number(period.value)).toLocaleString()})</>
+														)}
+													</option>
+												))}
+											</select>
+											{selectedBank === "bbl" && (
+												<p className="text-sm text-gray-500">
+													* ต้องผ่อนชำระไม่น้อยกว่า 500 บาท ต่องวด
+												</p>
+											)}
+										</div>
+									)}
+								</div>
+							)}
+
+							{(selectedMethod === "card" || selectedMethod === "card-r") && (
+								<div className="space-y-2">
+									<input type="hidden" name="customeremail" value={user?.email || ""} />
+									<input type="hidden" name="productdetail" value={`Deposit ${amount} THB`} />
+									<input type="hidden" name="refno" value={Math.floor(Math.random() * 1000000000000).toString().padStart(12, '0')} />
+									<input type="hidden" name="merchantid" value={process.env.NEXT_PUBLIC_PAYSOLUTIONS_MERCHANT_ID || ""} />
+									<input type="hidden" name="cc" value="00" />
+									<input type="hidden" name="total" value={amount} />
+									<input type="hidden" name="lang" value="TH" />
+									<input type="hidden" name="channel" value={selectedMethod === "card" ? "full" : `ibanking_${selectedBank}`} />
+									{selectedMethod === "card-r" && (
+										<input type="hidden" name="period" value={installmentPeriod} />
+									)}
+								</div>
+							)}
+
+							{selectedMethod === "card-r" && Number(amount) < 3000 && (
+								<p className="text-sm text-red-500 mt-2">
+									กรุณาระบุจำนวนเงินอย่างน้อย 3,000 บาท สำหรับการผ่อนชำระ
+								</p>
+							)}
+
+							{/* <Button
+								type="submit"
+								className={`w-full ${
+									isProcessing
+										? "bg-gray-500"
+										: "bg-orange-500 hover:bg-orange-600"
+								} text-white`}
+								disabled={
+									isProcessing ||
+									Boolean(showLimitError) ||
+									!selectedMethod ||
+									!amount ||
+									(selectedMethod === "card-r" && (!selectedBank || !installmentPeriod || Number(amount) < 3000))
+								}
+							>
+								{isProcessing ? (
+									<>
+										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+										Processing...
+									</>
+								) : (
+									"Confirm Deposit"
+								)}
+							</Button> */}
+							<Button
+								onClick={() => handleQrPayment(amount)}
+								disabled={isLoading}
+								className="w-full"
+							>
+								{isLoading ? (
+									<>
+										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+										กำลังสร้าง QR Code...
+									</>
+								) : (
+									'ชำระเงินด้วย QR'
+								)}
+							</Button>
+						</form>
+					</CardContent>
+				</Card>
+
+				<Card
+					className={
+						theme === "dark" ? "bg-[#151515] border-[#2A2A2A]" : ""
+					}
+				>
+					<CardHeader>
+						<CardTitle
+							className={theme === "dark" ? "text-white" : ""}
+						>
+							Recent Deposits
+						</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<div className="space-y-4">
+							{recentDeposits.length > 0 ? (
+								recentDeposits.map((deposit: any) => (
+									<div
+										key={deposit.id}
+										className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+									>
+										<div className="flex flex-col gap-1">
+											<div className="flex items-center gap-2">
+												<span className="font-medium">
+													{getMethodLabel(deposit.method)}
+												</span>
+												{getStatusBadge(deposit.status)}
+											</div>
+											<div className="text-sm text-muted-foreground">
+												{deposit.txnId}
+											</div>
+											<div className="text-sm text-muted-foreground">
+												{formatDate(deposit.createdAt || deposit.verifiedAt)}
+											</div>
+										</div>
+										<div className="flex flex-col items-end gap-1 mt-2 sm:mt-0">
+											<div className="font-medium">
+												{parseFloat(deposit.amount).toLocaleString('th-TH', {
+													minimumFractionDigits: 2,
+													maximumFractionDigits: 2
+												})} บาท
+											</div>
+										</div>
+									</div>
+								))
+							) : (
+								<p
+									className={`text-center ${
+										theme === "dark"
+											? "text-gray-400"
+											: "text-gray-500"
+									}`}
+								>
+									ไม่พบรายการเติมเงิน
+								</p>
+							)}
+						</div>
+					</CardContent>
+				</Card>
+			</div>
+			<Dialog open={showQrModal} onOpenChange={(open) => {
+        if (!open) handleCancelClick();
+        setShowQrModal(open);
+      }}>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>สแกน QR Code เพื่อชำระเงิน</DialogTitle>
+						<DialogDescription>
+							กรุณาชำระเงินภายใน {formatTime(countdown)}
+						</DialogDescription>
+					</DialogHeader>
+					<div className="flex flex-col items-center space-y-4">
+						{qrData && (
+							<>
+								<div className="rounded-lg bg-white p-4">
+									<img
+										src={`data:image/png;base64,${qrData.qrImage}`}
+										alt="QR Code"
+										className="h-64 w-64"
+									/>
+								</div>
+								<div className="text-center">
+									<p className="text-lg font-semibold">
+										จำนวนเงิน: ฿{Number(qrData.amount).toLocaleString(undefined, {
+											minimumFractionDigits: 2,
+											maximumFractionDigits: 2,
+										})}
+									</p>
+									<p className="text-sm text-muted-foreground">
+										พร้อมเพย์: {qrData.promptpayNumber}
+									</p>
+								</div>
+								<p className="text-sm text-muted-foreground">
+									กรุณารอสักครู่ ระบบกำลังตรวจสอบการชำระเงิน...
+								</p>
+								<Button
+                  variant="destructive"
+                  className="w-full"
+                  onClick={handleCancelClick}
+                >
+                  ยกเลิกรายการ
+                </Button>
+							</>
+						)}
+					</div>
+				</DialogContent>
+			</Dialog>
+			<Dialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+        <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle className={theme === 'dark' ? 'text-white' : ''}>วงเงินการฝาก</DialogTitle>
+            <DialogTitle>ยืนยันการยกเลิกรายการ</DialogTitle>
+            <DialogDescription>
+              คุณต้องการยกเลิกรายการชำระเงินนี้ใช่หรือไม่?
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-[#1a1a1a]' : 'bg-gray-50'}`}>
-              <p className={`font-medium mb-2 ${theme === 'dark' ? 'text-white' : ''}`}>
-                ระดับวงเงิน: {depositLimit?.name || 'Level 1'}
-              </p>
-              <div className={`space-y-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
-                <p>วงเงินลิมิต: ฿{Number(depositLimit?.dailyLimit || 50000).toLocaleString()}</p>
-                <p>ยอดฝากวันนี้: ฿{todayDeposits.toLocaleString()}</p>
-                <p>วงเงินคงเหลือที่สามารถฝากได้: ฿{remainingDailyLimit.toLocaleString()}</p>
-                <p className="text-sm text-blue-500">
-                  <a href="https://lin.ee/EO0xuyG" target="_blank" rel="noopener noreferrer">
-                    ติดต่อพนักงานเพื่อปลดลิมิต
-                  </a>
-                </p>
-              </div>
-            </div>
-            <Button 
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-              onClick={() => setShowLimitDialog(false)}
+          <div className="flex justify-end space-x-4 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowCancelConfirm(false)}
+              disabled={isCancelling}
             >
-              ตกลง
+              ไม่ใช่
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleCancelConfirm}
+              disabled={isCancelling}
+            >
+              {isCancelling ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  กำลังยกเลิกรายการ...
+                </>
+              ) : (
+                'ใช่, ยกเลิกรายการ'
+              )}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
-
-      <h1 className={`text-lg lg:text-2xl font-medium mb-6 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-        Deposit Funds
-      </h1>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
-          <CardHeader>
-            <CardTitle className={`flex items-center space-x-2 ${theme === 'dark' ? 'text-white' : ''}`}>
-              <Wallet className="h-6 w-6 text-orange-500" />
-              <span>Make a Deposit</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleDeposit} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="amount" className={theme === 'dark' ? 'text-white' : ''}>Amount (THB)</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="Enter amount"
-                  required
-                  min="0"
-                  step="0.01"
-                  className={`text-lg ${theme === 'dark' ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white' : ''}`}
-                />
-                {depositLimit && (
-                  <div className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                    <p>ยอดฝากวันนี้: ฿{todayDeposits.toLocaleString()}</p>
-                    <p>วงเงินคงเหลือที่ฝากได้: ฿{remainingDailyLimit.toLocaleString()}</p>
-                  </div>
-                )}
-                {showLimitError && (
-                  <p className="text-sm text-red-500">
-                    ไม่สามารถเพิ่มเงินได้ เนื่องจากเกินวงเงินที่กำหนด
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label className={theme === 'dark' ? 'text-white' : ''}>Select Payment Method</Label>
-                <div className="grid gap-4">
-                  {paymentMethods.map((method) => (
-                    <Button
-                      key={method.id}
-                      type="button"
-                      variant={selectedMethod === method.id ? 'default' : 'outline'}
-                      className={`w-full justify-start space-x-2 h-auto py-4 ${
-                        selectedMethod === method.id 
-                          ? 'bg-orange-500 text-white hover:bg-orange-600' 
-                          : theme === 'dark' 
-                            ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white hover:bg-[#202020]'
-                            : ''
-                      }`}
-                      onClick={() => setSelectedMethod(method.id)}
-                      disabled={Boolean(showLimitError)}
-                    >
-                      <div className="flex items-center space-x-4 w-full">
-                        {method.id === 'bank' ? (
-                          <Image 
-                            src="/kbank-logo.jpg" 
-                            alt="Bank Logo" 
-                            width={70} 
-                            height={60}
-                            className="rounded-md"
-                          />
-                        ) : (
-                          <div className={`p-4 ${theme === 'dark' ? 'bg-[#202020]' : 'bg-gray-100'} rounded-md`}>
-                            <CreditCard className="h-8 w-8 text-orange-500" />
-                          </div>
-                        )}
-                        <div className="flex flex-col items-start flex-grow">
-                          <span>{method.name}</span>
-                          {method.id === 'bank' ? (
-                            <div className="flex items-center justify-between w-full mt-1">
-                              <div>
-                                <p className="text-sm opacity-75">Bank: {method.accountNumber}</p>
-                                <p className="text-sm opacity-75">{method.accountName}</p>
-                              </div>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className={`ml-2 ${theme === 'dark' ? 'hover:bg-[#252525]' : ''}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCopyAccountNumber();
-                                }}
-                              >
-                                {copied ? (
-                                  <Check className="h-4 w-4 text-green-500" />
-                                ) : (
-                                  <Copy className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </div>
-                          ) : (
-                            <p className="text-sm opacity-75">{method.description}</p>
-                          )}
-                        </div>
-                      </div>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {selectedMethod === 'bank' && (
-                <div className="space-y-2">
-                  <Label htmlFor="slip" className={theme === 'dark' ? 'text-white' : ''}>Upload Transfer Slip</Label>
-                  <div className="flex items-center gap-4">
-                    <Input
-                      id="slip"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileChange}
-                      required
-                      className="hidden"
-                      disabled={Boolean(showLimitError)}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className={`w-full h-24 flex flex-col items-center justify-center border-dashed ${
-                        theme === 'dark' 
-                          ? 'bg-[#1a1a1a] border-[#2A2A2A] text-white hover:bg-[#202020]'
-                          : ''
-                      }`}
-                      onClick={() => document.getElementById('slip')?.click()}
-                      disabled={Boolean(showLimitError)}
-                    >
-                      <Upload className="h-6 w-6 mb-2" />
-                      {selectedFile ? (
-                        <span className="text-sm">{selectedFile.name}</span>
-                      ) : (
-                        <span className="text-sm">Click to upload slip</span>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <Button 
-                type="submit" 
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white"
-                disabled={Boolean(
-                  !amount || 
-                  !selectedMethod || 
-                  (selectedMethod === 'bank' && !selectedFile) || 
-                  isVerifying || 
-                  isProcessing || 
-                  !canDeposit
-                )}
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  'Proceed with Deposit'
-                )}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card className={theme === 'dark' ? 'bg-[#151515] border-[#2A2A2A]' : ''}>
-          <CardHeader>
-            <CardTitle className={theme === 'dark' ? 'text-white' : ''}>Recent Deposits</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {recentDeposits.length > 0 ? (
-                recentDeposits.map((deposit) => (
-                  <div
-                    key={deposit.id}
-                    className={`flex items-center justify-between p-4 border rounded-lg ${
-                      theme === 'dark' 
-                        ? 'bg-[#1a1a1a] border-[#2A2A2A]'
-                        : 'border-gray-200'
-                    }`}
-                  >
-                    <div>
-                      <p className={`font-medium ${theme === 'dark' ? 'text-white' : ''}`}>
-                        {Number(deposit.amount).toLocaleString()} ฿
-                      </p>
-                      <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {formatDate(deposit.verifiedAt)}
-                      </p>
-                    </div>
-                    <span
-                      className={`px-3 py-1 rounded-full text-sm ${
-                        deposit.status === 'completed'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}
-                    >
-                      {deposit.status}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <p className={`text-center ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                  No recent deposits
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </section>
-  );
+		</section>
+	);
 }
