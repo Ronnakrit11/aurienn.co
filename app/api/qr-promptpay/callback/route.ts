@@ -27,7 +27,6 @@ function verifySignature(data: CallbackData, signature: string): boolean {
 }
 
 export async function POST(request: Request) {
-    console.log('Received callback request');
   try {
     const headersList = headers();
     const signature = (await headersList).get('X-Signature');
@@ -80,7 +79,7 @@ export async function POST(request: Request) {
           paymentDate: new Date(data.paymentDate),
           updatedAt: new Date(),
         })
-        .where(eq(paymentTransactions.id, data.paymentId));
+        .where(eq(paymentTransactions.id, payment.id));
 
       // If payment successful, update user balance
       if (data.status === 'SUCCESS') {
