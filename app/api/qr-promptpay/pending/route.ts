@@ -30,7 +30,7 @@ export async function GET() {
       orderBy: (transactions, { desc }) => [desc(transactions.createdAt)],
     });
 
-    console.log('Found pending transaction:', pendingTransaction);
+    // console.log('Found pending transaction:', pendingTransaction);
 
     if (!pendingTransaction) {
       return NextResponse.json({ status: true, data: null });

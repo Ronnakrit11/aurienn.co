@@ -39,9 +39,9 @@ export async function POST(request: Request) {
 
     const { amount } = await request.json();
 
-    console.log("amount", { amount: parseInt(amount) });
-    console.log(`${QR_API_URL}/payment/${QR_SITE_ID}/bank/create`);
-    console.log("SECRET", QR_API_SECRET);
+    // console.log("amount", { amount: parseInt(amount) });
+    // console.log(`${QR_API_URL}/payment/${QR_SITE_ID}/bank/create`);
+    // console.log("SECRET", QR_API_SECRET);
     
     
 
