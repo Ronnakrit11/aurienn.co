@@ -441,7 +441,7 @@ export default function DepositPage() {
 
 	// Function to handle redirect after successful payment
 	const handlePaymentSuccess = useCallback(() => {
-		router.push("/dashboard/deposit/success");
+		router.push("/thanks-you");
 	}, [router]);
 
 	// Effect for checking payment status
