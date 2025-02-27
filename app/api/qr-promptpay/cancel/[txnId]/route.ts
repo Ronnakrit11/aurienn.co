@@ -9,7 +9,7 @@ const QR_API_SECRET = process.env.QR_API_SECRET;
 
 export async function DELETE(
   request: Request,
-  context: { params: { txnId: string } }
+  { params }: { params: Promise<{ txnId: string }> }
 ) {
   try {
     const currentUser = await getUser();
@@ -20,7 +20,7 @@ export async function DELETE(
       );
     }
 
-    const { txnId } = context.params;
+    const { txnId } = await params;
 
     // Check if transaction exists and is within 15 minutes
     const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);

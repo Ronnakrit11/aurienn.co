@@ -9,7 +9,7 @@ const QR_API_SECRET = process.env.QR_API_SECRET;
 
 export async function GET(
   request: Request,
-  context: { params: { txnId: string } }
+  { params }: { params: Promise<{ txnId: string }> }
 ) {
   try {
     const currentUser = await getUser();
@@ -20,7 +20,7 @@ export async function GET(
       );
     }
 
-    const { txnId } = await context.params;
+    const { txnId } = await params;
 
     // Get transaction from database
     const [transaction] = await db
