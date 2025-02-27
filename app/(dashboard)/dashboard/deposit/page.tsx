@@ -288,7 +288,7 @@ export default function DepositPage() {
 
 					// Refresh data
 					const [recentResponse, balanceResponse] = await Promise.all([
-						fetch("/api/deposits/recent"),
+						fetch("/api/transactions/deposit"),
 						fetch("/api/user/balance"),
 					]);
 
