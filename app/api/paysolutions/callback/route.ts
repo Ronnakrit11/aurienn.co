@@ -11,20 +11,16 @@ const API_KEY = process.env.PAYSOLUTIONS_API_KEY;
 
 async function verifyPaymentWithPaysolutions(orderNo: string) {
   try {
-    console.log('Merchant ID:', MERCHANT_ID);
-    console.log('Merchant Secret Key:', MERCHANT_SECRET_KEY);
-    console.log('API Key:', API_KEY);
-    
     const response = await fetch('https://apis.paysolutions.asia/order/orderdetailpost', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'merchantId': MERCHANT_ID || '',
+        'merchantId': MERCHANT_ID?.slice(-5) || '',
         'merchantSecretKey': MERCHANT_SECRET_KEY || '',
         'apikey': API_KEY || '',
       },
       body: JSON.stringify({
-        merchantId: MERCHANT_ID,
+        merchantId: MERCHANT_ID?.slice(-5),
         orderNo,
         refno: orderNo,
         productDetail: 'Payment Verification'
@@ -46,7 +42,7 @@ async function verifyPaymentWithPaysolutions(orderNo: string) {
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
-    console.log('PaySolutions callback received:', Object.fromEntries(formData.entries()));
+    // console.log('PaySolutions callback received:', Object.fromEntries(formData.entries()));
 
     // Extract data from form data
     const cardType = formData.get('cardtype') as string;
@@ -58,6 +54,13 @@ export async function POST(request: Request) {
     const status = formData.get('status') as string;
     const statusName = formData.get('statusname') as string;
     const total = parseFloat(formData.get('total') as string);
+
+    if (formData.get('secret') !== process.env.PAYSOLUTIONS_CALLBACK_SECRET) {
+      return NextResponse.json(
+        { error: 'Invalid secret key' },
+        { status: 400 }
+      );
+    }
 
     // Validate required fields
     if (!orderNo || !status || !total || !merchantId) {
@@ -96,7 +99,7 @@ export async function POST(request: Request) {
         statusName,
         total: total.toString(),
         txnId: '-',
-        method: cardType ? 'CREDIT_CARD' : 'QR_DECIMAL',
+        method: cardType ? 'CREDIT_CARD' : 'UNKNOW_CC',
         merchantId,
         orderNo,
         refNo,

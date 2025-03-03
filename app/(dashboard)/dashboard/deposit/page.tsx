@@ -1010,17 +1010,22 @@ export default function DepositPage() {
 								)}
 							</Button> */}
 							<Button
-								onClick={() => handleQrPayment(amount)}
+								// onClick={(e) => handleDeposit(e)}
+								type="submit"
 								disabled={isLoading}
-								className="w-full"
+								className={`w-full ${
+									isProcessing
+										? "bg-gray-500"
+										: "bg-orange-500 hover:bg-orange-600"
+								} text-white`}
 							>
 								{isLoading ? (
 									<>
 										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-										กำลังสร้าง QR Code...
+										กำลังสร้างรายการ...
 									</>
 								) : (
-									'ชำระเงินด้วย QR'
+									'ชำระเงิน'
 								)}
 							</Button>
 						</form>

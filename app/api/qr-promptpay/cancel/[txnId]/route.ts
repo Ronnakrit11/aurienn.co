@@ -29,6 +29,7 @@ export async function DELETE(
         eq(paymentTransactions.txnId, txnId),
         eq(paymentTransactions.userId, currentUser.id),
         eq(paymentTransactions.status, 'PE'),
+        eq(paymentTransactions.method, 'QR'),
         gt(paymentTransactions.createdAt, fifteenMinutesAgo)
       ),
     });
