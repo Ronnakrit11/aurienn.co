@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db/drizzle';
-import { userBalances, paymentTransactions } from '@/lib/db/schema';
+import { userBalances, paymentTransactions, users } from '@/lib/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { createHmac } from 'node:crypto';
 import { sendDepositNotification } from '@/lib/telegram/bot';
@@ -72,7 +72,18 @@ export async function POST(request: Request) {
     }
 
     // Verify payment with PaySolutions API
-    const verificationResult = await verifyPaymentWithPaysolutions(orderNo);
+    const prepareResult = await verifyPaymentWithPaysolutions(orderNo);
+    if (!prepareResult || prepareResult.length === 0) {
+      return NextResponse.json(
+        { error: 'Payment verification failed' },
+        { status: 400 }
+      );
+    }
+
+    console.log('prepareResult:', prepareResult);
+    
+    
+    const verificationResult = prepareResult[0];
     if (!verificationResult || verificationResult.Status !== 'CP') {
       console.error('Payment verification failed:', verificationResult);
       return NextResponse.json(
@@ -81,15 +92,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // Extract user ID from order number (assuming it's stored in the order number)
-    const userId = parseInt(orderNo.split('-')[0]);
-    if (!userId) {
-      console.error('Invalid user ID in order number');
+    // ค้นหา user จาก customerEmail
+    const user = await db.query.users.findFirst({
+      where: eq(users.email, customerEmail)
+    });
+
+    if (!user) {
+      console.error('User not found with email:', customerEmail);
       return NextResponse.json(
-        { error: 'Invalid user ID' },
+        { error: 'User not found' },
         { status: 400 }
       );
     }
+
+    const userId = user.id;
 
     // Start transaction
     await db.transaction(async (tx) => {
@@ -107,12 +123,13 @@ export async function POST(request: Request) {
         cardType,
         customerEmail,
         currencyCode: verificationResult.CurrencyCode,
-        installment: verificationResult.installment,
+        installment: verificationResult.installment && verificationResult.installment !== '-' ? 
+                     parseInt(verificationResult.installment) : null,
         postBackUrl: verificationResult.PostBackUrl,
         postBackParameters: verificationResult.PostBackParameters,
         postBackMethod: verificationResult.PostBackMethod,
         postBackCompleted: verificationResult.PostBackCompleted === 'true',
-        orderDateTime: verificationResult.OrderDateTime,
+        orderDateTime: verificationResult.OrderDateTime ? new Date(verificationResult.OrderDateTime) : null,
         userId,
         paymentDate: new Date(),
       }).returning();
